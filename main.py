@@ -4,6 +4,7 @@ import os
 
 app = FastAPI()
 @app.get("/")
+@app.head("/")
 async def health_check():
     return {"status": "ok"}
 
