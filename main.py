@@ -128,6 +128,7 @@ async def callback(request: Request):
                     last_image_store[user_id] = image_data
                     analysis_result = await analyze_with_dify(image_data, mode="quick")
                     await push_message(user_id, analysis_result)
+                    await push_message(user_id, "💡「詳しく」と送ると、より詳しいメッセージが受け取れます")
                 else:
                     await push_message(user_id, "画像の取得に失敗しました。もう一度お試しください。")
     
