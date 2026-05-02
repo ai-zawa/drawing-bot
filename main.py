@@ -3,6 +3,9 @@ import httpx
 import os
 
 app = FastAPI()
+@app.get("/")
+async def health_check():
+    return {"status": "ok"}
 
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
