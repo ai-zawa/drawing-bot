@@ -120,15 +120,13 @@ async def analyze_with_dify(image_data: bytes, mode: str = "quick"):
 
 # Supabaseに分析結果を保存する関数
 async def save_drawing(user_id: str, analysis_a: str = None, analysis_b: str = None):
-    print(f"save_drawing呼び出し: user_id={user_id}")
     try:
         data = {
             "user_id": user_id,
             "analysis_mode_a": analysis_a,
             "analysis_mode_b": analysis_b,
         }
-        result = supabase.table("drawings").insert(data).execute()
-        print(f"保存結果: {result}")
+        supabase.table("drawings").insert(data).execute()
     except Exception as e:
         print(f"Supabase保存エラー: {e}")
 
