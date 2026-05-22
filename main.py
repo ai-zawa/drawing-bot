@@ -1,19 +1,22 @@
 from fastapi import FastAPI, Request
 import httpx
 import os
+from supabase import create_client
 
 app = FastAPI()
-@app.get("/")
-@app.head("/")
-async def health_check():
-    return {"status": "ok"}
 
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
 DIFY_API_KEY = os.environ.get("DIFY_API_KEY")
 DIFY_API_KEY_DETAIL = os.environ.get("DIFY_API_KEY_DETAIL")
 DIFY_API_URL = os.environ.get("DIFY_API_URL")
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
+# Supabaseクライアントの初期化
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# 最後に受け取った画像データをユーザーごとに一時保存する辞書
 last_image_store = {}
 
 async def reply_message(reply_token: str, text: str):
@@ -30,7 +33,7 @@ async def reply_message(reply_token: str, text: str):
         async with httpx.AsyncClient() as client:
             await client.post(url, headers=headers, json=payload)
     except Exception:
-        pass  # 返信失敗は静かに無視する
+        pass
 
 async def push_message(user_id: str, text: str):
     url = "https://api.line.me/v2/bot/message/push"
@@ -46,7 +49,7 @@ async def push_message(user_id: str, text: str):
         async with httpx.AsyncClient() as client:
             await client.post(url, headers=headers, json=payload)
     except Exception:
-        pass  # 送信失敗は静かに無視する
+        pass
 
 async def get_line_image(image_id: str):
     url = f"https://api-data.line.me/v2/bot/message/{image_id}/content"
@@ -71,7 +74,6 @@ async def analyze_with_dify(image_data: bytes, mode: str = "quick"):
     
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
-            # 画像をDifyにアップロード
             files = {"file": ("image.jpg", image_data, "image/jpeg")}
             data = {"user": "line-user"}
             upload_response = await client.post(
@@ -83,7 +85,6 @@ async def analyze_with_dify(image_data: bytes, mode: str = "quick"):
             
             file_id = upload_response.json().get("id")
             
-            # ワークフローを実行
             run_url = f"{DIFY_API_URL}/workflows/run"
             payload = {
                 "inputs": {
@@ -106,19 +107,33 @@ async def analyze_with_dify(image_data: bytes, mode: str = "quick"):
                     return text
                 return "⚠️ 分析結果を取得できませんでした。もう一度お試しください。"
             
-            # Geminiのクォータ超過の場合
             if run_response.status_code == 429:
                 return "⚠️ 現在アクセスが集中しています。しばらく時間をおいてお試しください。"
             
             return "⚠️ 分析に失敗しました。もう一度お試しください。"
     
     except httpx.TimeoutException:
-        # タイムアウトした場合
         return "⚠️ 分析に時間がかかっています。もう一度お試しください。"
     
     except Exception:
-        # その他の予期しないエラー
         return "⚠️ エラーが発生しました。しばらく時間をおいてお試しください。"
+
+# Supabaseに分析結果を保存する関数
+async def save_drawing(user_id: str, analysis_a: str = None, analysis_b: str = None):
+    try:
+        data = {
+            "user_id": user_id,
+            "analysis_mode_a": analysis_a,
+            "analysis_mode_b": analysis_b,
+        }
+        supabase.table("drawings").insert(data).execute()
+    except Exception:
+        pass  # 保存失敗は静かに無視する
+
+@app.get("/")
+@app.head("/")
+async def health_check():
+    return {"status": "ok"}
 
 @app.post("/callback")
 async def callback(request: Request):
@@ -144,6 +159,11 @@ async def callback(request: Request):
                             image_data = last_image_store[user_id]
                             analysis_result = await analyze_with_dify(
                                 image_data, mode="detail"
+                            )
+                            # モードBの結果をSupabaseに保存
+                            await save_drawing(
+                                user_id,
+                                analysis_b=analysis_result
                             )
                             await push_message(user_id, analysis_result)
                         else:
@@ -171,6 +191,11 @@ async def callback(request: Request):
                         analysis_result = await analyze_with_dify(
                             image_data, mode="quick"
                         )
+                        # モードAの結果をSupabaseに保存
+                        await save_drawing(
+                            user_id,
+                            analysis_a=analysis_result
+                        )
                         await push_message(user_id, analysis_result)
                         await push_message(
                             user_id,
@@ -183,6 +208,6 @@ async def callback(request: Request):
                         )
     
     except Exception:
-        pass  # Webhookのエラーは静かに無視する
+        pass
     
     return {"status": "ok"}
