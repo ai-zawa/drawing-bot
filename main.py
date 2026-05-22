@@ -127,8 +127,8 @@ async def save_drawing(user_id: str, analysis_a: str = None, analysis_b: str = N
             "analysis_mode_b": analysis_b,
         }
         supabase.table("drawings").insert(data).execute()
-    except Exception:
-        pass  # 保存失敗は静かに無視する
+    except Exception as e:
+        print(f"Supabase保存エラー: {e}")
 
 @app.get("/")
 @app.head("/")
