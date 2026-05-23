@@ -149,6 +149,27 @@ async def save_drawing(user_id: str, image_path: str = None, analysis_a: str = N
     except Exception as e:
         print(f"Supabase保存エラー: {e}")
 
+async def update_analysis_b(user_id: str, analysis_b: str):
+    try:
+        result = supabase.table("drawings")\
+            .select("id")\
+            .eq("user_id", user_id)\
+            .order("created_at", desc=True)\
+            .limit(1)\
+            .execute()
+        
+        if result.data:
+            record_id = result.data[0]["id"]
+            supabase.table("drawings")\
+                .update({"analysis_mode_b": analysis_b})\
+                .eq("id", record_id)\
+                .execute()
+            return True
+        return False
+    except Exception as e:
+        print(f"モードB更新エラー: {e}")
+        return False
+
 # 最新レコードにメモを追記する関数
 async def update_notes(user_id: str, notes: str):
     try:
@@ -179,12 +200,10 @@ async def update_notes(user_id: str, notes: str):
         print(f"メモ更新エラー: {e}")
         return False
 
-
 @app.get("/")
 @app.head("/")
 async def health_check():
     return {"status": "ok"}
-
 
 @app.post("/callback")
 async def callback(request: Request):
@@ -217,10 +236,7 @@ async def callback(request: Request):
                             analysis_result = await analyze_with_dify(
                                 image_data, mode="detail", notes=notes
                             )
-                            await save_drawing(
-                                user_id,
-                                analysis_b=analysis_result
-                            )
+                            await update_analysis_b(user_id, analysis_result)
                             await push_message(user_id, analysis_result)
                         else:
                             await reply_message(
@@ -239,10 +255,7 @@ async def callback(request: Request):
                             analysis_result = await analyze_with_dify(
                                 image_data, mode="detail"
                             )
-                            await save_drawing(
-                                user_id,
-                                analysis_b=analysis_result
-                            )
+                            await update_analysis_b(user_id, analysis_result)
                             await push_message(user_id, analysis_result)
                         else:
                             await reply_message(
