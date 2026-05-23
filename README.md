@@ -2,21 +2,16 @@
 
 > 娘の絵をAIが分析し、親の観察眼を拡張するLINE Bot
 
-[
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue)
+(https://python.org)
 
-](https://python.org)
-[
 
 ![FastAPI](https://img.shields.io/badge/FastAPI-latest-green)
-
-](https://fastapi.tiangolo.com)
-[
+(https://fastapi.tiangolo.com)
 
 ![Dify](https://img.shields.io/badge/Dify-latest-orange)
-
-](https://dify.ai)
+(https://dify.ai)
 
 ## 概要
 
@@ -101,12 +96,14 @@ create table drawings (
   tags text[],
   embedding vector(768)
 );
+```
 
 使い方
 LINEでボットを友だち追加する
 子供の絵の写真を送る → モードAの分析が返ってくる
 「詳しく」と送る → モードBの詳細分析が返ってくる
 「ちなみに〇〇」と送る → 付帯情報を加えた詳細分析が返ってくる
+
 設計思想
 Negative Constraints
 このシステムには「絶対にしないこと」を明示的に定義しています。
@@ -115,12 +112,16 @@ Negative Constraints
 診断しない（発達の遅れを示唆する表現禁止）
 断定・予言しない（才能や将来の決めつけ禁止）
 親に処方しない（「〇〇すべき」という指導禁止）
+
 今後の予定
 Layer 1：分析結果の蓄積（✅ 実装済み）
 Layer 2：LLM Wiki型の長期記憶（概念ページの自動更新）
 Layer 3：GraphRAGによる関係性の構造化
 
-
-
-
-
+関連記事
+ビジネスサイド出身がはじめてAIソリューションを作ってみた話
+AIが娘の成長を「理解する」ために：Amuletの長期記憶設計
+Author
+ai-zawa
+Zenn: ai_zawa
+GitHub: ai-zawa
