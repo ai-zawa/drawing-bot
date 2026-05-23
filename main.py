@@ -152,6 +152,8 @@ async def save_drawing(user_id: str, image_path: str = None, analysis_a: str = N
 # 最新レコードにメモを追記する関数
 async def update_notes(user_id: str, notes: str):
     try:
+        print(f"update_notes開始: user_id={user_id}, notes={notes}")
+        
         # 最新レコードのIDを取得
         result = supabase.table("drawings")\
             .select("id")\
@@ -160,23 +162,29 @@ async def update_notes(user_id: str, notes: str):
             .limit(1)\
             .execute()
         
+        print(f"最新レコード取得結果: {result.data}")
+        
         if result.data:
             record_id = result.data[0]["id"]
-            # notesを更新
-            supabase.table("drawings")\
+            update_result = supabase.table("drawings")\
                 .update({"notes": notes})\
                 .eq("id", record_id)\
                 .execute()
+            print(f"更新結果: {update_result}")
             return True
+        
+        print("レコードが見つかりませんでした")
         return False
     except Exception as e:
         print(f"メモ更新エラー: {e}")
         return False
 
+
 @app.get("/")
 @app.head("/")
 async def health_check():
     return {"status": "ok"}
+
 
 @app.post("/callback")
 async def callback(request: Request):
