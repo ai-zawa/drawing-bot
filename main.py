@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 import httpx
 import os
+import uuid
 from supabase import create_client
 
 app = FastAPI()
@@ -118,11 +119,29 @@ async def analyze_with_dify(image_data: bytes, mode: str = "quick"):
     except Exception:
         return "⚠️ エラーが発生しました。しばらく時間をおいてお試しください。"
 
+# 画像をSupabase Storageに保存する関数
+async def save_image(user_id: str, image_data: bytes) -> str:
+    try:
+        # ユニークなファイル名を生成
+        file_name = f"{user_id}/{uuid.uuid4()}.jpg"
+        
+        # Supabase Storageに画像をアップロード
+        supabase.storage.from_("drawings").upload(
+            file_name,
+            image_data,
+            {"content-type": "image/jpeg"}
+        )
+        return file_name
+    except Exception as e:
+        print(f"画像保存エラー: {e}")
+        return None
+
 # Supabaseに分析結果を保存する関数
-async def save_drawing(user_id: str, analysis_a: str = None, analysis_b: str = None):
+async def save_drawing(user_id: str, image_path: str = None, analysis_a: str = None, analysis_b: str = None):
     try:
         data = {
             "user_id": user_id,
+            "image_path": image_path,
             "analysis_mode_a": analysis_a,
             "analysis_mode_b": analysis_b,
         }
@@ -188,12 +207,17 @@ async def callback(request: Request):
                     
                     if image_data:
                         last_image_store[user_id] = image_data
+
+                        # 画像をSupabase Storageに保存
+                        image_path = await save_image(user_id, image_data)
+
                         analysis_result = await analyze_with_dify(
                             image_data, mode="quick"
                         )
-                        # モードAの結果をSupabaseに保存
+                        # モードAの結果と画像パスをSupabaseに保存
                         await save_drawing(
                             user_id,
+                            image_path=image_path,
                             analysis_a=analysis_result
                         )
                         await push_message(user_id, analysis_result)
