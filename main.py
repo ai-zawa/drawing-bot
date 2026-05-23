@@ -14,10 +14,8 @@ DIFY_API_URL = os.environ.get("DIFY_API_URL")
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
-# Supabaseクライアントの初期化
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# 最後に受け取った画像データをユーザーごとに一時保存する辞書
 last_image_store = {}
 
 async def reply_message(reply_token: str, text: str):
@@ -66,7 +64,7 @@ async def get_line_image(image_id: str):
     except Exception:
         return None
 
-async def analyze_with_dify(image_data: bytes, mode: str = "quick"):
+async def analyze_with_dify(image_data: bytes, mode: str = "quick", notes: str = None):
     api_key = DIFY_API_KEY_DETAIL if mode == "detail" else DIFY_API_KEY
     upload_url = f"{DIFY_API_URL}/files/upload"
     headers = {
@@ -87,14 +85,20 @@ async def analyze_with_dify(image_data: bytes, mode: str = "quick"):
             file_id = upload_response.json().get("id")
             
             run_url = f"{DIFY_API_URL}/workflows/run"
+            
+            # inputsにnotesを追加
+            inputs = {
+                "image": {
+                    "transfer_method": "local_file",
+                    "upload_file_id": file_id,
+                    "type": "image"
+                }
+            }
+            if notes:
+                inputs["notes"] = notes
+            
             payload = {
-                "inputs": {
-                    "image": {
-                        "transfer_method": "local_file",
-                        "upload_file_id": file_id,
-                        "type": "image"
-                    }
-                },
+                "inputs": inputs,
                 "response_mode": "blocking",
                 "user": "line-user"
             }
@@ -119,13 +123,9 @@ async def analyze_with_dify(image_data: bytes, mode: str = "quick"):
     except Exception:
         return "⚠️ エラーが発生しました。しばらく時間をおいてお試しください。"
 
-# 画像をSupabase Storageに保存する関数
 async def save_image(user_id: str, image_data: bytes) -> str:
     try:
-        # ユニークなファイル名を生成
         file_name = f"{user_id}/{uuid.uuid4()}.jpg"
-        
-        # Supabase Storageに画像をアップロード
         supabase.storage.from_("drawings").upload(
             file_name,
             image_data,
@@ -136,18 +136,42 @@ async def save_image(user_id: str, image_data: bytes) -> str:
         print(f"画像保存エラー: {e}")
         return None
 
-# Supabaseに分析結果を保存する関数
-async def save_drawing(user_id: str, image_path: str = None, analysis_a: str = None, analysis_b: str = None):
+async def save_drawing(user_id: str, image_path: str = None, analysis_a: str = None, analysis_b: str = None, notes: str = None):
     try:
         data = {
             "user_id": user_id,
             "image_path": image_path,
             "analysis_mode_a": analysis_a,
             "analysis_mode_b": analysis_b,
+            "notes": notes,
         }
         supabase.table("drawings").insert(data).execute()
     except Exception as e:
         print(f"Supabase保存エラー: {e}")
+
+# 最新レコードにメモを追記する関数
+async def update_notes(user_id: str, notes: str):
+    try:
+        # 最新レコードのIDを取得
+        result = supabase.table("drawings")\
+            .select("id")\
+            .eq("user_id", user_id)\
+            .order("created_at", desc=True)\
+            .limit(1)\
+            .execute()
+        
+        if result.data:
+            record_id = result.data[0]["id"]
+            # notesを更新
+            supabase.table("drawings")\
+                .update({"notes": notes})\
+                .eq("id", record_id)\
+                .execute()
+            return True
+        return False
+    except Exception as e:
+        print(f"メモ更新エラー: {e}")
+        return False
 
 @app.get("/")
 @app.head("/")
@@ -169,17 +193,36 @@ async def callback(request: Request):
                 if message["type"] == "text":
                     user_message = message["text"].strip()
                     
-                    if user_message == "詳しく":
+                    # 「メモ：」で始まるテキストの場合
+                    if user_message.startswith("メモ：") or user_message.startswith("メモ:"):
+                        notes = user_message.replace("メモ：", "").replace("メモ:", "").strip()
+                        success = await update_notes(user_id, notes)
+                        if success:
+                            await reply_message(reply_token, "📝 メモを保存しました")
+                        else:
+                            await reply_message(reply_token, "⚠️ 先に絵の写真を送ってください📷")
+                    
+                    # 「詳しく」の場合
+                    elif user_message == "詳しく":
                         if user_id in last_image_store:
                             await reply_message(
                                 reply_token,
                                 "🎨 絵を見ています…少しだけお待ちください"
                             )
                             image_data = last_image_store[user_id]
+                            
+                            # 最新レコードのnotesを取得
+                            notes_result = supabase.table("drawings")\
+                                .select("notes")\
+                                .eq("user_id", user_id)\
+                                .order("created_at", desc=True)\
+                                .limit(1)\
+                                .execute()
+                            notes = notes_result.data[0]["notes"] if notes_result.data else None
+                            
                             analysis_result = await analyze_with_dify(
-                                image_data, mode="detail"
+                                image_data, mode="detail", notes=notes
                             )
-                            # モードBの結果をSupabaseに保存
                             await save_drawing(
                                 user_id,
                                 analysis_b=analysis_result
@@ -190,6 +233,7 @@ async def callback(request: Request):
                                 reply_token,
                                 "先に絵の写真を送ってください📷"
                             )
+                    
                     else:
                         await reply_message(
                             reply_token,
@@ -207,14 +251,10 @@ async def callback(request: Request):
                     
                     if image_data:
                         last_image_store[user_id] = image_data
-
-                        # 画像をSupabase Storageに保存
                         image_path = await save_image(user_id, image_data)
-
                         analysis_result = await analyze_with_dify(
                             image_data, mode="quick"
                         )
-                        # モードAの結果と画像パスをSupabaseに保存
                         await save_drawing(
                             user_id,
                             image_path=image_path,
@@ -223,7 +263,7 @@ async def callback(request: Request):
                         await push_message(user_id, analysis_result)
                         await push_message(
                             user_id,
-                            "💡「詳しく」と送ると、より詳細な分析が受け取れます"
+                            "💡「詳しく」と送ると、より詳細な分析が受け取れます\n📝「メモ：〇〇」で付帯情報を追加できます"
                         )
                     else:
                         await push_message(
