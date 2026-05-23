@@ -279,21 +279,28 @@ async def callback(request: Request):
                     image_data = await get_line_image(image_id)
                     
                     if image_data:
-                        last_image_store[user_id] = image_data
-                        image_path = await save_image(user_id, image_data)
+                        # まず分析を実行
                         analysis_result = await analyze_with_dify(
                             image_data, mode="quick"
                         )
-                        await save_drawing(
-                            user_id,
-                            image_path=image_path,
-                            analysis_a=analysis_result
-                        )
-                        await push_message(user_id, analysis_result)
-                        await push_message(
-                            user_id,
-                            "💡「詳しく」→ より詳細な分析\n💡「ちなみに〇〇」→ 付帯情報を加えた詳細分析"
-                        )
+                        
+                        # エラーの場合は保存せず終了
+                        if analysis_result.startswith("⚠️"):
+                            await push_message(user_id, analysis_result)
+                        else:
+                            # 成功した場合のみ保存
+                            last_image_store[user_id] = image_data
+                            image_path = await save_image(user_id, image_data)
+                            await save_drawing(
+                                user_id,
+                                image_path=image_path,
+                                analysis_a=analysis_result
+                            )
+                            await push_message(user_id, analysis_result)
+                            await push_message(
+                                user_id,
+                                "💡「詳しく」→ より詳細な分析\n💡「ちなみに〇〇」→ 付帯情報を加えた詳細分析"
+                            )
                     else:
                         await push_message(
                             user_id,
