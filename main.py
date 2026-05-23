@@ -193,16 +193,34 @@ async def callback(request: Request):
                 if message["type"] == "text":
                     user_message = message["text"].strip()
                     
-                    # 「メモ：」で始まるテキストの場合
-                    if user_message.startswith("メモ：") or user_message.startswith("メモ:"):
-                        notes = user_message.replace("メモ：", "").replace("メモ:", "").strip()
-                        success = await update_notes(user_id, notes)
-                        if success:
-                            await reply_message(reply_token, "📝 メモを保存しました")
+                    # 「ちなみに」で始まるテキストの場合（付帯情報つきモードB）
+                    if user_message.startswith("ちなみに"):
+                        if user_id in last_image_store:
+                            notes = user_message.replace("ちなみに", "").strip()
+                            
+                            # メモをSupabaseに保存
+                            await update_notes(user_id, notes)
+                            
+                            await reply_message(
+                                reply_token,
+                                "🎨 絵を見ています…少しだけお待ちください"
+                            )
+                            image_data = last_image_store[user_id]
+                            analysis_result = await analyze_with_dify(
+                                image_data, mode="detail", notes=notes
+                            )
+                            await save_drawing(
+                                user_id,
+                                analysis_b=analysis_result
+                            )
+                            await push_message(user_id, analysis_result)
                         else:
-                            await reply_message(reply_token, "⚠️ 先に絵の写真を送ってください📷")
+                            await reply_message(
+                                reply_token,
+                                "先に絵の写真を送ってください📷"
+                            )
                     
-                    # 「詳しく」の場合
+                    # 「詳しく」の場合（付帯情報なしモードB）
                     elif user_message == "詳しく":
                         if user_id in last_image_store:
                             await reply_message(
@@ -210,18 +228,8 @@ async def callback(request: Request):
                                 "🎨 絵を見ています…少しだけお待ちください"
                             )
                             image_data = last_image_store[user_id]
-                            
-                            # 最新レコードのnotesを取得
-                            notes_result = supabase.table("drawings")\
-                                .select("notes")\
-                                .eq("user_id", user_id)\
-                                .order("created_at", desc=True)\
-                                .limit(1)\
-                                .execute()
-                            notes = notes_result.data[0]["notes"] if notes_result.data else None
-                            
                             analysis_result = await analyze_with_dify(
-                                image_data, mode="detail", notes=notes
+                                image_data, mode="detail"
                             )
                             await save_drawing(
                                 user_id,
@@ -263,7 +271,7 @@ async def callback(request: Request):
                         await push_message(user_id, analysis_result)
                         await push_message(
                             user_id,
-                            "💡「詳しく」と送ると、より詳細な分析が受け取れます\n📝「メモ：〇〇」で付帯情報を追加できます"
+                            "💡「詳しく」→ より詳細な分析\n💡「ちなみに〇〇」→ 付帯情報を加えた詳細分析"
                         )
                     else:
                         await push_message(
