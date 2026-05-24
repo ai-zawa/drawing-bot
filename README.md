@@ -123,13 +123,3 @@ Layer 1：分析結果の蓄積（✅ 実装済み）
 Layer 2：LLM Wiki型の長期記憶（概念ページの自動更新）
 Layer 3：GraphRAGによる関係性の構造化
 ```
-
-## 関連記事
-```
-ビジネスサイド出身がはじめてAIソリューションを作ってみた話
-AIが娘の成長を「理解する」ために：Amuletの長期記憶設計
-Author
-ai-zawa
-Zenn: ai_zawa
-GitHub: ai-zawa
-```
