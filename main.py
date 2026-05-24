@@ -170,6 +170,28 @@ async def update_analysis_b(user_id: str, analysis_b: str):
         print(f"モードB更新エラー: {e}")
         return False
 
+# 最新レコードのちなみにモードB分析結果を更新する関数
+async def update_analysis_b_with_notes(user_id: str, analysis_b: str):
+    try:
+        result = supabase.table("drawings")\
+            .select("id")\
+            .eq("user_id", user_id)\
+            .order("created_at", desc=True)\
+            .limit(1)\
+            .execute()
+        
+        if result.data:
+            record_id = result.data[0]["id"]
+            supabase.table("drawings")\
+                .update({"analysis_mode_b_with_notes": analysis_b})\
+                .eq("id", record_id)\
+                .execute()
+            return True
+        return False
+    except Exception as e:
+        print(f"ちなみにモードB更新エラー: {e}")
+        return False
+
 # 最新レコードにメモを追記する関数
 async def update_notes(user_id: str, notes: str):
     try:
@@ -217,10 +239,7 @@ async def callback(request: Request):
                     if user_message.startswith("ちなみに"):
                         if user_id in last_image_store:
                             notes = user_message.replace("ちなみに", "").strip()
-                            
-                            # メモをSupabaseに保存
                             await update_notes(user_id, notes)
-                            
                             await reply_message(
                                 reply_token,
                                 "🎨 絵を見ています…少しだけお待ちください"
@@ -229,7 +248,9 @@ async def callback(request: Request):
                             analysis_result = await analyze_with_dify(
                                 image_data, mode="detail", notes=notes
                             )
-                            await update_analysis_b(user_id, analysis_result)
+                            # エラーの場合は保存しない
+                            if not analysis_result.startswith("⚠️"):
+                                await update_analysis_b_with_notes(user_id, analysis_result)
                             await push_message(user_id, analysis_result)
                         else:
                             await reply_message(
@@ -248,19 +269,15 @@ async def callback(request: Request):
                             analysis_result = await analyze_with_dify(
                                 image_data, mode="detail"
                             )
-                            await update_analysis_b(user_id, analysis_result)
+                            # エラーの場合は保存しない
+                            if not analysis_result.startswith("⚠️"):
+                                await update_analysis_b(user_id, analysis_result)
                             await push_message(user_id, analysis_result)
                         else:
                             await reply_message(
                                 reply_token,
                                 "先に絵の写真を送ってください📷"
                             )
-                    
-                    else:
-                        await reply_message(
-                            reply_token,
-                            "絵の写真を送ってください📷"
-                        )
                 
                 elif message["type"] == "image":
                     image_id = message["id"]
