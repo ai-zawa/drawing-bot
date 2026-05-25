@@ -124,6 +124,71 @@ async def analyze_with_dify(image_data: bytes, mode: str = "quick", notes: str =
     except Exception:
         return "⚠️ エラーが発生しました。しばらく時間をおいてお試しください。"
 
+# 過去の分析結果を取得する関数
+async def get_past_analyses(user_id: str, limit: int = 5) -> str:
+    try:
+        result = supabase.table("drawings")\
+            .select("created_at, analysis_mode_b, analysis_mode_b_with_notes")\
+            .eq("user_id", user_id)\
+            .order("created_at", desc=True)\
+            .limit(limit)\
+            .execute()
+        
+        if not result.data:
+            return None
+        
+        analyses = []
+        for i, record in enumerate(reversed(result.data), 1):
+            analysis = record.get("analysis_mode_b_with_notes") or record.get("analysis_mode_b")
+            if analysis:
+                date = record["created_at"][:10]
+                analyses.append(f"【{i}枚目 {date}】\n{analysis}")
+        
+        return "\n\n".join(analyses) if analyses else None
+    except Exception as e:
+        print(f"過去データ取得エラー: {e}")
+        return None
+
+# 振り返りワークフローを実行する関数
+async def analyze_review(current_analysis: str, past_analyses: str) -> str:
+    api_key = DIFY_API_KEY_REVIEW
+    run_url = f"{DIFY_API_URL}/workflows/run"
+    headers = {
+        "Authorization": f"Bearer {api_key}"
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            payload = {
+                "inputs": {
+                    "current_analysis": current_analysis,
+                    "past_analyses": past_analyses
+                },
+                "response_mode": "blocking",
+                "user": "line-user"
+            }
+            
+            run_response = await client.post(run_url, headers=headers, json=payload)
+            
+            if run_response.status_code == 200:
+                result = run_response.json()
+                text = result.get("data", {}).get("outputs", {}).get("text")
+                if text:
+                    return text
+                return "⚠️ 振り返り結果を取得できませんでした。"
+            
+            if run_response.status_code == 429:
+                return "⚠️ 現在アクセスが集中しています。しばらく時間をおいてお試しください。"
+            
+            return "⚠️ 振り返りに失敗しました。もう一度お試しください。"
+    
+    except httpx.TimeoutException:
+        return "⚠️ 振り返りに時間がかかっています。もう一度お試しください。"
+    
+    except Exception as e:
+        print(f"振り返りエラー: {e}")
+        return "⚠️ エラーが発生しました。しばらく時間をおいてお試しください。"
+
 async def save_image(user_id: str, image_data: bytes) -> str:
     try:
         file_name = f"{user_id}/{uuid.uuid4()}.jpg"
