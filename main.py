@@ -405,8 +405,9 @@ async def callback(request: Request):
                             )
                             await push_message(user_id, analysis_result)
                             await push_message(
-                                user_id,
-                                "💡「詳しく」→ より詳細な分析\n💡「ちなみに〇〇」→ 付帯情報を加えた詳細分析"
+                            user_id,
+                            "💡「詳しく」→ より詳細な分析\n💡「ちなみに〇〇」→ 付帯情報を加えた詳細分析\n💡「振り返って」→ これまでの絵を振り返る"
+                            )
                             )
                     else:
                         await push_message(
