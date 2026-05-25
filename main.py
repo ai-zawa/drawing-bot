@@ -300,7 +300,38 @@ async def callback(request: Request):
                 
                 if message["type"] == "text":
                     user_message = message["text"].strip()
-                    
+
+                    # 「振り返って」の場合（振り返りモード）
+                    if user_message == "振り返って":
+                        await reply_message(
+                            reply_token,
+                            "🎨 これまでの絵を振り返っています…少しだけお待ちください"
+                        )
+                        
+                        # 過去の分析を取得
+                        past_analyses = await get_past_analyses(user_id)
+                        
+                        if not past_analyses:
+                            await push_message(
+                                user_id,
+                                "まだ絵の記録が十分にありません。絵をもう少し送ってみてください📷"
+                            )
+                        else:
+                            # 最新の分析を取得
+                            latest = supabase.table("drawings")\
+                                .select("analysis_mode_b, analysis_mode_b_with_notes")\
+                                .eq("user_id", user_id)\
+                                .order("created_at", desc=True)\
+                                .limit(1)\
+                                .execute()
+                            
+                            current_analysis = ""
+                            if latest.data:
+                                current_analysis = latest.data[0].get("analysis_mode_b_with_notes") or latest.data[0].get("analysis_mode_b") or ""
+                            
+                            review_result = await analyze_review(current_analysis, past_analyses)
+                            await push_message(user_id, review_result)
+
                     # 「ちなみに」で始まるテキストの場合（付帯情報つきモードB）
                     if user_message.startswith("ちなみに"):
                         if user_id in last_image_store:
