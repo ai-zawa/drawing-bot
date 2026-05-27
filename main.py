@@ -189,6 +189,18 @@ async def analyze_review(current_analysis: str, past_analyses: str) -> str:
         print(f"振り返りエラー: {e}")
         return "⚠️ エラーが発生しました。しばらく時間をおいてお試しください。"
 
+# 振り返り結果をreviewsテーブルに保存する関数
+async def save_review(user_id: str, review_text: str, drawing_ids: list):
+    try:
+        data = {
+            "user_id": user_id,
+            "review_text": review_text,
+            "drawing_ids": drawing_ids
+        }
+        supabase.table("reviews").insert(data).execute()
+    except Exception as e:
+        print(f"振り返り保存エラー: {e}")
+
 async def save_image(user_id: str, image_data: bytes) -> str:
     try:
         file_name = f"{user_id}/{uuid.uuid4()}.jpg"
