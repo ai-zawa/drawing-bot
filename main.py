@@ -320,29 +320,48 @@ async def callback(request: Request):
                             "🎨 これまでの絵を振り返っています…少しだけお待ちください"
                         )
                         
-                        # 過去の分析を取得
-                        past_analyses = await get_past_analyses(user_id)
-                        
-                        if not past_analyses:
-                            await push_message(
-                                user_id,
-                                "まだ絵の記録が十分にありません。絵をもう少し送ってみてください📷"
-                            )
-                        else:
-                            # 最新の分析を取得
-                            latest = supabase.table("drawings")\
-                                .select("analysis_mode_b, analysis_mode_b_with_notes")\
+                        # 過去の分析と絵のIDを取得
+                        try:
+                            past_records = supabase.table("drawings")\
+                                .select("id, created_at, analysis_mode_b, analysis_mode_b_with_notes")\
                                 .eq("user_id", user_id)\
                                 .order("created_at", desc=True)\
-                                .limit(1)\
+                                .limit(5)\
                                 .execute()
                             
-                            current_analysis = ""
-                            if latest.data:
-                                current_analysis = latest.data[0].get("analysis_mode_b_with_notes") or latest.data[0].get("analysis_mode_b") or ""
-                            
-                            review_result = await analyze_review(current_analysis, past_analyses)
-                            await push_message(user_id, review_result)
+                            if not past_records.data:
+                                await push_message(
+                                    user_id,
+                                    "まだ絵の記録が十分にありません。絵をもう少し送ってみてください📷"
+                                )
+                            else:
+                                # 絵のIDを収集
+                                drawing_ids = [r["id"] for r in past_records.data]
+                                
+                                # 過去の分析テキストを整形
+                                analyses = []
+                                for i, record in enumerate(reversed(past_records.data), 1):
+                                    analysis = record.get("analysis_mode_b_with_notes") or record.get("analysis_mode_b")
+                                    if analysis:
+                                        date = record["created_at"][:10]
+                                        analyses.append(f"【{i}枚目 {date}】\n{analysis}")
+                                
+                                past_analyses = "\n\n".join(analyses) if analyses else ""
+                                
+                                # 最新の分析を取得
+                                current_analysis = analyses[-1] if analyses else ""
+                                
+                                review_result = await analyze_review(current_analysis, past_analyses)
+                                
+                                # エラーでなければ保存
+                                if not review_result.startswith("⚠️"):
+                                    await save_review(user_id, review_result, drawing_ids)
+                                
+                                await push_message(user_id, review_result)
+                        
+                        except Exception as e:
+                            print(f"振り返りエラー: {e}")
+                            await push_message(user_id, "⚠️ 振り返りに失敗しました。もう一度お試しください。")
 
                     # 「ちなみに」で始まるテキストの場合（付帯情報つきモードB）
                     if user_message.startswith("ちなみに"):
