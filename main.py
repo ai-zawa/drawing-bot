@@ -201,6 +201,29 @@ async def save_review(user_id: str, review_text: str, drawing_ids: list):
     except Exception as e:
         print(f"振り返り保存エラー: {e}")
 
+# モードBの出力からモチーフタグを抽出する関数
+def extract_tags(analysis_text: str) -> list:
+    tags = []
+    try:
+        # 「この絵に描かれているもの」セクションを探す
+        import re
+        pattern = r'★この絵に描かれているもの★\n(.*?)(?=\n\n|\n①|\Z)'
+        match = re.search(pattern, analysis_text, re.DOTALL)
+        
+        if match:
+            items_text = match.group(1)
+            # 箇条書きの各行からモチーフを抽出
+            for line in items_text.strip().split('\n'):
+                line = line.strip()
+                if line.startswith('・'):
+                    # 「・花（紫、ピンク、青）」→「花」
+                    tag = line[1:].split('（')[0].split('(')[0].strip()
+                    if tag:
+                        tags.append(tag)
+    except Exception as e:
+        print(f"タグ抽出エラー: {e}")
+    return tags
+        
 async def save_image(user_id: str, image_data: bytes) -> str:
     try:
         file_name = f"{user_id}/{uuid.uuid4()}.jpg"
