@@ -291,8 +291,16 @@ async def update_analysis_b_with_notes(user_id: str, analysis_b: str):
         
         if result.data:
             record_id = result.data[0]["id"]
+            
+            # タグを抽出
+            tags = extract_tags(analysis_b)
+            
+            update_data = {"analysis_mode_b_with_notes": analysis_b}
+            if tags:
+                update_data["tags"] = tags
+            
             supabase.table("drawings")\
-                .update({"analysis_mode_b_with_notes": analysis_b})\
+                .update(update_data)\
                 .eq("id", record_id)\
                 .execute()
             return True
