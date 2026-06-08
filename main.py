@@ -202,6 +202,123 @@ async def save_review(user_id: str, review_text: str, drawing_ids: list):
     except Exception as e:
         print(f"振り返り保存エラー: {e}")
 
+# 概念ページを取得する関数
+async def get_wiki_page(user_id: str, concept: str) -> dict:
+    try:
+        result = supabase.table("wiki_pages")\
+            .select("*")\
+            .eq("user_id", user_id)\
+            .eq("concept", concept)\
+            .execute()
+        
+        if result.data:
+            return result.data[0]
+        return None
+    except Exception as e:
+        print(f"Wiki取得エラー: {e}")
+        return None
+
+# 概念ページを保存・更新する関数
+async def save_wiki_page(user_id: str, concept: str, wiki_data: dict, drawing_id: str):
+    try:
+        existing = await get_wiki_page(user_id, concept)
+        
+        # source_drawing_idsを更新
+        if existing:
+            existing_ids = existing.get("source_drawing_ids") or []
+            if drawing_id not in existing_ids:
+                existing_ids.append(drawing_id)
+        else:
+            existing_ids = [drawing_id]
+        
+        data = {
+            "user_id": user_id,
+            "concept": concept,
+            "summary": wiki_data.get("summary"),
+            "schema_exploration": wiki_data.get("schema_exploration"),
+            "schema_narrative": wiki_data.get("schema_narrative"),
+            "schema_relationship": wiki_data.get("schema_relationship"),
+            "schema_inquiry": wiki_data.get("schema_inquiry"),
+            "timeline": wiki_data.get("timeline"),
+            "updated_at": "now()",
+            "source_drawing_ids": existing_ids
+        }
+        
+        if existing:
+            supabase.table("wiki_pages")\
+                .update(data)\
+                .eq("user_id", user_id)\
+                .eq("concept", concept)\
+                .execute()
+        else:
+            supabase.table("wiki_pages")\
+                .insert(data)\
+                .execute()
+    except Exception as e:
+        print(f"Wiki保存エラー: {e}")
+
+# Ingestワークフローを実行する関数
+async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, drawing_id: str):
+    try:
+        # 現在の概念ページを取得
+        existing = await get_wiki_page(user_id, concept)
+        current_wiki = ""
+        if existing:
+            import json
+            current_wiki = json.dumps({
+                "summary": existing.get("summary"),
+                "schema_exploration": existing.get("schema_exploration"),
+                "schema_narrative": existing.get("schema_narrative"),
+                "schema_relationship": existing.get("schema_relationship"),
+                "schema_inquiry": existing.get("schema_inquiry"),
+                "timeline": existing.get("timeline")
+            }, ensure_ascii=False)
+        
+        has_notes = "true" if notes else "false"
+        today = __import__('datetime').date.today().isoformat()
+        
+        # analysisに日付を付加
+        analysis_with_date = f"[{today}]\n{analysis}"
+        
+        headers = {
+            "Authorization": f"Bearer {DIFY_API_KEY_INGEST}"
+        }
+        
+        run_url = f"{DIFY_API_URL}/workflows/run"
+        
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            payload = {
+                "inputs": {
+                    "concept": concept,
+                    "analysis": analysis_with_date,
+                    "notes": notes or "",
+                    "has_notes": has_notes,
+                    "current_wiki": current_wiki
+                },
+                "response_mode": "blocking",
+                "user": "line-user"
+            }
+            
+            response = await client.post(run_url, headers=headers, json=payload)
+            
+            if response.status_code == 200:
+                result = response.json()
+                text = result.get("data", {}).get("outputs", {}).get("text", "")
+                
+                # JSONをパース
+                import json
+                clean = text.replace("```json", "").replace("```", "").strip()
+                wiki_data = json.loads(clean)
+                
+                # 概念ページを保存
+                await save_wiki_page(user_id, concept, wiki_data, drawing_id)
+                return True
+            return False
+    
+    except Exception as e:
+        print(f"Ingestエラー: {e}")
+        return False
+
 # モードBの出力からモチーフタグを抽出する関数
 def extract_tags(analysis_text: str) -> list:
     tags = []
