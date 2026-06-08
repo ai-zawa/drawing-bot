@@ -316,7 +316,23 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
                 # 概念ページを保存
                 await save_wiki_page(user_id, concept, wiki_data, drawing_id)
                 return True
+
+
+            if response.status_code == 200:
+                result = response.json()
+                text = result.get("data", {}).get("outputs", {}).get("text", "")
+                print(f"Dify応答: {text[:200]}")  # 最初の200文字だけ表示
+                
+                import json
+                clean = text.replace("```json", "").replace("```", "").strip()
+                wiki_data = json.loads(clean)
+                
+                await save_wiki_page(user_id, concept, wiki_data, drawing_id)
+                return True
+            
+            print(f"Difyエラー: status={response.status_code}, body={response.text[:200]}")
             return False
+
     
     except Exception as e:
         print(f"Ingestエラー: {e}")
