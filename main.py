@@ -410,17 +410,17 @@ async def update_analysis_b(user_id: str, analysis_b: str):
 async def update_analysis_b_with_notes(user_id: str, analysis_b: str):
     try:
         result = supabase.table("drawings")\
-            .select("id")\
+            .select("id, tags, notes")\
             .eq("user_id", user_id)\
             .order("created_at", desc=True)\
             .limit(1)\
             .execute()
         
         if result.data:
-            record_id = result.data[0]["id"]
-            
-            # タグを抽出
-            tags = extract_tags(analysis_b)
+            record = result.data[0]
+            record_id = record["id"]
+            tags = record.get("tags") or []
+            notes = record.get("notes") or ""
             
             update_data = {"analysis_mode_b_with_notes": analysis_b}
             if tags:
@@ -430,6 +430,16 @@ async def update_analysis_b_with_notes(user_id: str, analysis_b: str):
                 .update(update_data)\
                 .eq("id", record_id)\
                 .execute()
+            
+            # タグをもとにIngest処理を実行（付帯情報あり）
+            for concept in tags:
+                await run_ingest(
+                    user_id=user_id,
+                    concept=concept,
+                    analysis=analysis_b,
+                    notes=notes,
+                    drawing_id=record_id
+                )
             return True
         return False
     except Exception as e:
