@@ -410,7 +410,7 @@ async def update_analysis_b(user_id: str, analysis_b: str):
 async def update_analysis_b_with_notes(user_id: str, analysis_b: str):
     try:
         result = supabase.table("drawings")\
-            .select("id, tags, notes")\
+            .select("id, notes")\
             .eq("user_id", user_id)\
             .order("created_at", desc=True)\
             .limit(1)\
@@ -419,8 +419,10 @@ async def update_analysis_b_with_notes(user_id: str, analysis_b: str):
         if result.data:
             record = result.data[0]
             record_id = record["id"]
-            tags = record.get("tags") or []
             notes = record.get("notes") or ""
+            
+            # タグを抽出
+            tags = extract_tags(analysis_b)
             
             update_data = {"analysis_mode_b_with_notes": analysis_b}
             if tags:
