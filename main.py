@@ -257,8 +257,11 @@ async def save_wiki_page(user_id: str, concept: str, wiki_data: dict, drawing_id
     except Exception as e:
         print(f"Wiki保存エラー: {e}")
 
+
+
 # Ingestワークフローを実行する関数
 async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, drawing_id: str):
+    print(f"run_ingest開始: concept={concept}, has_notes={bool(notes)}")
     try:
         # 現在の概念ページを取得
         existing = await get_wiki_page(user_id, concept)
