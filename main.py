@@ -371,7 +371,7 @@ async def save_drawing(user_id: str, image_path: str = None, analysis_a: str = N
 async def update_analysis_b(user_id: str, analysis_b: str):
     try:
         result = supabase.table("drawings")\
-            .select("id, tags")\
+            .select("id")\
             .eq("user_id", user_id)\
             .order("created_at", desc=True)\
             .limit(1)\
@@ -380,7 +380,9 @@ async def update_analysis_b(user_id: str, analysis_b: str):
         if result.data:
             record = result.data[0]
             record_id = record["id"]
-            tags = record.get("tags") or []
+            
+            # タグを抽出
+            tags = extract_tags(analysis_b)
             
             update_data = {"analysis_mode_b": analysis_b}
             if tags:
