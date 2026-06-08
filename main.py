@@ -14,6 +14,7 @@ DIFY_API_URL = os.environ.get("DIFY_API_URL")
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 DIFY_API_KEY_REVIEW = os.environ.get("DIFY_API_KEY_REVIEW")
+DIFY_API_KEY_INGEST = os.environ.get("DIFY_API_KEY_INGEST")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
