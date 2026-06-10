@@ -342,21 +342,43 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
 def extract_tags(analysis_text: str) -> list:
     tags = []
     try:
-        # 「この絵に描かれているもの」セクションを探す
         import re
-        pattern = r'★この絵に描かれているもの★\n(.*?)(?=\n\n|\n①|\Z)'
+        
+        # ★コア概念タグ★セクションを探す
+        pattern = r'★コア概念タグ★\n(.*?)(?=\n\n|\n①|\Z)'
         match = re.search(pattern, analysis_text, re.DOTALL)
         
         if match:
             items_text = match.group(1)
-            # 箇条書きの各行からモチーフを抽出
             for line in items_text.strip().split('\n'):
                 line = line.strip()
-                if line.startswith('・'):
-                    # 「・花（紫、ピンク、青）」→「花」
-                    tag = line[1:].split('（')[0].split('(')[0].strip()
-                    if tag:
-                        tags.append(tag)
+                if '：' in line or ':' in line:
+                    # 「・モチーフ：富士山」→「富士山」
+                    # 「・素材：粘土 絵の具」→「粘土」「絵の具」に分割
+                    tag_part = line.split('：')[-1].split(':')[-1].strip()
+                    # 先頭の「・」を除去
+                    tag_part = tag_part.lstrip('・').strip()
+                    
+                    # スペースや「、」「,」で複数タグに分割
+                    sub_tags = re.split(r'[\s、,]+', tag_part)
+                    for tag in sub_tags:
+                        tag = tag.strip()
+                        if tag and len(tag) <= 15:
+                            tags.append(tag)
+        
+        # 旧形式（★この絵に描かれているもの★）にも対応
+        if not tags:
+            pattern_old = r'★この絵に描かれているもの★\n(.*?)(?=\n\n|\n①|\Z)'
+            match_old = re.search(pattern_old, analysis_text, re.DOTALL)
+            if match_old:
+                items_text = match_old.group(1)
+                for line in items_text.strip().split('\n'):
+                    line = line.strip()
+                    if line.startswith('・'):
+                        tag = line[1:].split('（')[0].split('(')[0].strip()
+                        if tag:
+                            tags.append(tag)
+    
     except Exception as e:
         print(f"タグ抽出エラー: {e}")
     return tags
