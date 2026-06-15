@@ -260,7 +260,7 @@ async def save_wiki_page(user_id: str, concept: str, wiki_data: dict, drawing_id
 
 
 # Ingestワークフローを実行する関数
-async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, drawing_id: str):
+    async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, drawing_id: str):
     print(f"run_ingest開始: concept={concept}, has_notes={bool(notes)}")
     try:
         # 現在の概念ページを取得
@@ -277,10 +277,12 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
                 "timeline": existing.get("timeline")
             }, ensure_ascii=False)
         
+        # 既存の概念ページ名一覧を取得
+        existing_concepts = await get_existing_concepts(user_id)
+        existing_concepts_str = ", ".join(existing_concepts) if existing_concepts else ""
+        
         has_notes = "true" if notes else "false"
         today = __import__('datetime').date.today().isoformat()
-        
-        # analysisに日付を付加
         analysis_with_date = f"[{today}]\n{analysis}"
         
         headers = {
@@ -289,14 +291,18 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
         
         run_url = f"{DIFY_API_URL}/workflows/run"
         
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=120.0) as client:
             payload = {
                 "inputs": {
                     "concept": concept,
                     "analysis": analysis_with_date,
                     "notes": notes or "",
                     "has_notes": has_notes,
-                    "current_wiki": current_wiki
+                    "current_wiki": current_wiki,
+                    "existing_concepts": existing_concepts_str,
+                    "supabase_url": SUPABASE_URL,
+                    "supabase_key": SUPABASE_KEY,
+                    "user_id": user_id
                 },
                 "response_mode": "blocking",
                 "user": "line-user"
@@ -308,30 +314,20 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
                 result = response.json()
                 text = result.get("data", {}).get("outputs", {}).get("text", "")
                 
-                # JSONをパース
-                import json
-                clean = text.replace("```json", "").replace("```", "").strip()
-                wiki_data = json.loads(clean)
-                
-                # 概念ページを保存
-                await save_wiki_page(user_id, concept, wiki_data, drawing_id)
-                return True
-
-
-            if response.status_code == 200:
-                result = response.json()
-                text = result.get("data", {}).get("outputs", {}).get("text", "")
-                print(f"Dify応答: {text[:200]}")  # 最初の200文字だけ表示
-                
-                import json
-                clean = text.replace("```json", "").replace("```", "").strip()
-                wiki_data = json.loads(clean)
-                
-                await save_wiki_page(user_id, concept, wiki_data, drawing_id)
-                return True
+                if text:
+                    import json
+                    clean = text.replace("```json", "").replace("```", "").strip()
+                    wiki_data = json.loads(clean)
+                    await save_wiki_page(user_id, concept, wiki_data, drawing_id)
+                    print(f"Wiki保存完了: concept={concept}")
+                    return True
             
-            print(f"Difyエラー: status={response.status_code}, body={response.text[:200]}")
+            print(f"Difyエラー: status={response.status_code}")
             return False
+    
+    except Exception as e:
+        print(f"Ingestエラー: {e}")
+        return False
 
     
     except Exception as e:
