@@ -327,8 +327,16 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
             
             if response.status_code == 200:
                 result = response.json()
-                print(f"Dify応答全体: {str(result)[:500]}")  # 追加
-                text = result.get("data", {}).get("outputs", {}).get("text", "")
+                outputs = result.get("data", {}).get("outputs", {})
+                
+                # イテレーションの出力はoutputという配列になる
+                text = ""
+                if "text" in outputs:
+                    text = outputs["text"]
+                elif "output" in outputs:
+                    output_list = outputs["output"]
+                    if isinstance(output_list, list) and len(output_list) > 0:
+                        text = output_list[0]
                 
                 if text:
                     import json
@@ -338,7 +346,7 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
                     print(f"Wiki保存完了: concept={concept}")
                     return True
                 else:
-                    print(f"textが空: outputs={result.get('data', {}).get('outputs', {})}")  # 追加
+                    print(f"textが空: outputs={outputs}")
             
             print(f"Difyエラー: status={response.status_code}")
             return False
