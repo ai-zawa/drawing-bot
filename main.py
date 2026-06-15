@@ -327,6 +327,7 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
             
             if response.status_code == 200:
                 result = response.json()
+                print(f"Dify応答全体: {str(result)[:500]}")  # 追加
                 text = result.get("data", {}).get("outputs", {}).get("text", "")
                 
                 if text:
@@ -336,6 +337,8 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
                     await save_wiki_page(user_id, concept, wiki_data, drawing_id)
                     print(f"Wiki保存完了: concept={concept}")
                     return True
+                else:
+                    print(f"textが空: outputs={result.get('data', {}).get('outputs', {})}")  # 追加
             
             print(f"Difyエラー: status={response.status_code}")
             return False
