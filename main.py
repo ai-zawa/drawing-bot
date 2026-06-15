@@ -202,6 +202,7 @@ async def save_review(user_id: str, review_text: str, drawing_ids: list):
     except Exception as e:
         print(f"振り返り保存エラー: {e}")
 
+
 # 概念ページを取得する関数
 async def get_wiki_page(user_id: str, concept: str) -> dict:
     try:
@@ -217,6 +218,20 @@ async def get_wiki_page(user_id: str, concept: str) -> dict:
     except Exception as e:
         print(f"Wiki取得エラー: {e}")
         return None
+
+
+# 既存の概念ページ名一覧を取得する関数
+async def get_existing_concepts(user_id: str) -> list:
+    try:
+        result = supabase.table("wiki_pages")\
+            .select("concept")\
+            .eq("user_id", user_id)\
+            .execute()
+        return [r["concept"] for r in result.data] if result.data else []
+    except Exception as e:
+        print(f"概念一覧取得エラー: {e}")
+        return []
+
 
 # 概念ページを保存・更新する関数
 async def save_wiki_page(user_id: str, concept: str, wiki_data: dict, drawing_id: str):
