@@ -234,8 +234,14 @@ async def get_existing_concepts(user_id: str) -> list:
 
 
 # 概念ページを保存・更新する関数
-async def save_wiki_page(user_id: str, concept: str, wiki_data: dict, drawing_id: str):
+async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str):
     try:
+        # LLMが名寄せした確定概念名を使用する
+        concept = wiki_data.get("concept")
+        if not concept:
+            print(f"conceptが空のためスキップ")
+            return
+        
         existing = await get_wiki_page(user_id, concept)
         
         # source_drawing_idsを更新
@@ -269,16 +275,16 @@ async def save_wiki_page(user_id: str, concept: str, wiki_data: dict, drawing_id
             supabase.table("wiki_pages")\
                 .insert(data)\
                 .execute()
+        
+        print(f"Wiki保存完了: concept={concept}")
     except Exception as e:
         print(f"Wiki保存エラー: {e}")
-
-
 
 # Ingestワークフローを実行する関数
 async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, drawing_id: str):
     print(f"run_ingest開始: concept={concept}, has_notes={bool(notes)}")
     try:
-        # 現在の概念ページを取得
+        # 現在の概念ページを取得（名寄せ前の概念名で検索）
         existing = await get_wiki_page(user_id, concept)
         current_wiki = ""
         if existing:
@@ -329,7 +335,6 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
                 result = response.json()
                 outputs = result.get("data", {}).get("outputs", {})
                 
-                # イテレーションの出力はoutputという配列になる
                 text = ""
                 if "text" in outputs:
                     text = outputs["text"]
@@ -342,8 +347,8 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
                     import json
                     clean = text.replace("```json", "").replace("```", "").strip()
                     wiki_data = json.loads(clean)
-                    await save_wiki_page(user_id, concept, wiki_data, drawing_id)
-                    print(f"Wiki保存完了: concept={concept}")
+                    # save_wiki_pageにconceptを渡さない（wiki_data内のconceptを使用）
+                    await save_wiki_page(user_id, wiki_data, drawing_id)
                     return True
                 else:
                     print(f"textが空: outputs={outputs}")
