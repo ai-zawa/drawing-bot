@@ -260,7 +260,7 @@ async def save_wiki_page(user_id: str, concept: str, wiki_data: dict, drawing_id
 
 
 # Ingestワークフローを実行する関数
-    async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, drawing_id: str):
+async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, drawing_id: str):
     print(f"run_ingest開始: concept={concept}, has_notes={bool(notes)}")
     try:
         # 現在の概念ページを取得
@@ -329,10 +329,6 @@ async def save_wiki_page(user_id: str, concept: str, wiki_data: dict, drawing_id
         print(f"Ingestエラー: {e}")
         return False
 
-    
-    except Exception as e:
-        print(f"Ingestエラー: {e}")
-        return False
 
 # モードBの出力からモチーフタグを抽出する関数
 def extract_tags(analysis_text: str) -> list:
