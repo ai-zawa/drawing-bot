@@ -284,21 +284,7 @@ async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str):
 async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, drawing_id: str):
     print(f"run_ingest開始: concept={concept}, has_notes={bool(notes)}")
     try:
-        # 現在の概念ページを取得（名寄せ前の概念名で検索）
-        existing = await get_wiki_page(user_id, concept)
-        current_wiki = ""
-        if existing:
-            import json
-            current_wiki = json.dumps({
-                "summary": existing.get("summary"),
-                "schema_exploration": existing.get("schema_exploration"),
-                "schema_narrative": existing.get("schema_narrative"),
-                "schema_relationship": existing.get("schema_relationship"),
-                "schema_inquiry": existing.get("schema_inquiry"),
-                "timeline": existing.get("timeline")
-            }, ensure_ascii=False)
-        
-        # 既存の概念ページ名一覧を取得
+        # 既存の概念ページ名一覧を取得（名寄せのために必要）
         existing_concepts = await get_existing_concepts(user_id)
         existing_concepts_str = ", ".join(existing_concepts) if existing_concepts else ""
         
@@ -306,10 +292,7 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
         today = __import__('datetime').date.today().isoformat()
         analysis_with_date = f"[{today}]\n{analysis}"
         
-        headers = {
-            "Authorization": f"Bearer {DIFY_API_KEY_INGEST}"
-        }
-        
+        headers = {"Authorization": f"Bearer {DIFY_API_KEY_INGEST}"}
         run_url = f"{DIFY_API_URL}/workflows/run"
         
         async with httpx.AsyncClient(timeout=120.0) as client:
@@ -319,7 +302,6 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
                     "analysis": analysis_with_date,
                     "notes": notes or "",
                     "has_notes": has_notes,
-                    "current_wiki": current_wiki,
                     "existing_concepts": existing_concepts_str,
                     "supabase_url": SUPABASE_URL,
                     "supabase_key": SUPABASE_KEY,
@@ -347,7 +329,6 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
                     import json
                     clean = text.replace("```json", "").replace("```", "").strip()
                     wiki_data = json.loads(clean)
-                    # save_wiki_pageにconceptを渡さない（wiki_data内のconceptを使用）
                     await save_wiki_page(user_id, wiki_data, drawing_id)
                     return True
                 else:
