@@ -1,7 +1,8 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, BackgroundTasks
 import httpx
 import os
 import uuid
+import asyncio
 from supabase import create_client
 
 app = FastAPI()
