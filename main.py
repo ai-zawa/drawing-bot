@@ -532,7 +532,7 @@ async def health_check():
     return {"status": "ok"}
 
 @app.post("/callback")
-async def callback(request: Request):
+async def callback(request: Request, background_tasks: BackgroundTasks):
     try:
         body = await request.json()
         events = body.get("events", [])
