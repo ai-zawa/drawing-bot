@@ -387,7 +387,21 @@ def extract_tags(analysis_text: str) -> list:
     except Exception as e:
         print(f"タグ抽出エラー: {e}")
     return tags
-        
+
+
+# バックグラウンドで全概念のIngestを実行する関数
+async def ingest_all_concepts(user_id: str, tags: list, analysis: str, notes: str, record_id: str):
+    for concept in tags:
+        await run_ingest(
+            user_id=user_id,
+            concept=concept,
+            analysis=analysis,
+            notes=notes,
+            drawing_id=record_id
+        )
+        await asyncio.sleep(1)  # Dify APIのレートリミット対策
+
+
 async def save_image(user_id: str, image_data: bytes) -> str:
     try:
         file_name = f"{user_id}/{uuid.uuid4()}.jpg"
