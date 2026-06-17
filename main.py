@@ -611,7 +611,7 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
                             )
                             # エラーの場合は保存しない
                             if not analysis_result.startswith("⚠️"):
-                                await update_analysis_b_with_notes(user_id, analysis_result)
+                                await update_analysis_b_with_notes(user_id, analysis_result, background_tasks)
                             await push_message(user_id, analysis_result)
                         else:
                             await reply_message(
@@ -632,7 +632,7 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
                             )
                             # エラーの場合は保存しない
                             if not analysis_result.startswith("⚠️"):
-                                await update_analysis_b(user_id, analysis_result)
+                                await update_analysis_b(user_id, analysis_result, background_tasks)
                             await push_message(user_id, analysis_result)
                         else:
                             await reply_message(
