@@ -428,7 +428,7 @@ async def save_drawing(user_id: str, image_path: str = None, analysis_a: str = N
     except Exception as e:
         print(f"Supabase保存エラー: {e}")
 
-async def update_analysis_b(user_id: str, analysis_b: str):
+async def update_analysis_b(user_id: str, analysis_b: str, background_tasks: BackgroundTasks):
     try:
         result = supabase.table("drawings")\
             .select("id")\
@@ -441,7 +441,6 @@ async def update_analysis_b(user_id: str, analysis_b: str):
             record = result.data[0]
             record_id = record["id"]
             
-            # タグを抽出
             tags = extract_tags(analysis_b)
             
             update_data = {"analysis_mode_b": analysis_b}
@@ -453,20 +452,18 @@ async def update_analysis_b(user_id: str, analysis_b: str):
                 .eq("id", record_id)\
                 .execute()
             
-            # タグをもとにIngest処理を実行（付帯情報なし）
-            for concept in tags:
-                await run_ingest(
-                    user_id=user_id,
-                    concept=concept,
-                    analysis=analysis_b,
-                    notes="",
-                    drawing_id=record_id
+            # Ingest処理をバックグラウンドで実行
+            if tags:
+                background_tasks.add_task(
+                    asyncio.ensure_future,
+                    ingest_all_concepts(user_id, tags, analysis_b, "", record_id)
                 )
             return True
         return False
     except Exception as e:
         print(f"モードB更新エラー: {e}")
         return False
+
 
 # 最新レコードのちなみにモードB分析結果を更新する関数
 async def update_analysis_b_with_notes(user_id: str, analysis_b: str):
