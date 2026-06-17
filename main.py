@@ -466,7 +466,7 @@ async def update_analysis_b(user_id: str, analysis_b: str, background_tasks: Bac
 
 
 # 最新レコードのちなみにモードB分析結果を更新する関数
-async def update_analysis_b_with_notes(user_id: str, analysis_b: str):
+async def update_analysis_b_with_notes(user_id: str, analysis_b: str, background_tasks: BackgroundTasks):
     try:
         result = supabase.table("drawings")\
             .select("id, notes")\
@@ -480,7 +480,6 @@ async def update_analysis_b_with_notes(user_id: str, analysis_b: str):
             record_id = record["id"]
             notes = record.get("notes") or ""
             
-            # タグを抽出
             tags = extract_tags(analysis_b)
             
             update_data = {"analysis_mode_b_with_notes": analysis_b}
@@ -492,14 +491,11 @@ async def update_analysis_b_with_notes(user_id: str, analysis_b: str):
                 .eq("id", record_id)\
                 .execute()
             
-            # タグをもとにIngest処理を実行（付帯情報あり）
-            for concept in tags:
-                await run_ingest(
-                    user_id=user_id,
-                    concept=concept,
-                    analysis=analysis_b,
-                    notes=notes,
-                    drawing_id=record_id
+            # Ingest処理をバックグラウンドで実行
+            if tags:
+                background_tasks.add_task(
+                    asyncio.ensure_future,
+                    ingest_all_concepts(user_id, tags, analysis_b, notes, record_id)
                 )
             return True
         return False
