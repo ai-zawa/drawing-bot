@@ -67,7 +67,7 @@ async def get_line_image(image_id: str):
         print(f"❌ LINE画像取得エラー: {e}")
         return None
 
-async def analyze_with_dify(image_data: bytes, mode: str = "quick", notes: str = None):
+async def analyze_with_dify(image_data: bytes, mode: str = "quick", notes: str = None, wiki_context: str = None):
     api_key = DIFY_API_KEY_DETAIL if mode == "detail" else DIFY_API_KEY
     upload_url = f"{DIFY_API_URL}/files/upload"
     headers = {"Authorization": f"Bearer {api_key}"}
