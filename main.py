@@ -458,13 +458,24 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
                         if user_id in last_image_store:
                             await reply_message(reply_token, "🎨 絵を見ています…少しだけお待ちください")
                             image_data = last_image_store[user_id]
-                            analysis_result = await analyze_with_dify(image_data, mode="detail")
+                            
+                            # 最新のタグを取得してwiki_contextを構築
+                            latest = supabase.table("drawings")\
+                                .select("tags")\
+                                .eq("user_id", user_id)\
+                                .order("created_at", desc=True)\
+                                .limit(1)\
+                                .execute()
+                            tags = latest.data[0].get("tags") or [] if latest.data else []
+                            wiki_context = await get_wiki_context(user_id, tags)
+                            
+                            analysis_result = await analyze_with_dify(image_data, mode="detail", wiki_context=wiki_context)
                             if not analysis_result.startswith("⚠️"):
                                 await update_analysis_b(user_id, analysis_result, background_tasks)
                             await push_message(user_id, analysis_result)
                         else:
                             await reply_message(reply_token, "先に絵の写真を送ってください📷")
-                            
+                    
                     elif user_message == "振り返って":
                         await reply_message(reply_token, "🎨 これまでの絵を振り返っています…少しだけお待ちください")
                         try:
