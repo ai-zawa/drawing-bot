@@ -412,10 +412,12 @@ async def update_analysis_b_direct(user_id: str, analysis_b: str, background_tas
 
 @app.get("/")
 @app.head("/")
+
 async def health_check():
     return {"status": "ok"}
 
 @app.post("/callback")
+
 async def callback(request: Request, background_tasks: BackgroundTasks):
     try:
         body = await request.json()
@@ -427,18 +429,31 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
                 user_id = event["source"]["userId"]
                 if message["type"] == "text":
                     user_message = message["text"].strip()
+                            
                     if user_message.startswith("ちなみに"):
                         if user_id in last_image_store:
                             notes = user_message.replace("ちなみに", "").strip()
                             await update_notes(user_id, notes)
                             await reply_message(reply_token, "🎨 絵を見ています…少しだけお待ちください")
                             image_data = last_image_store[user_id]
-                            analysis_result = await analyze_with_dify(image_data, mode="detail", notes=notes)
+                            
+                            # 最新のタグを取得してwiki_contextを構築
+                            latest = supabase.table("drawings")\
+                                .select("tags")\
+                                .eq("user_id", user_id)\
+                                .order("created_at", desc=True)\
+                                .limit(1)\
+                                .execute()
+                            tags = latest.data[0].get("tags") or [] if latest.data else []
+                            wiki_context = await get_wiki_context(user_id, tags)
+                            
+                            analysis_result = await analyze_with_dify(image_data, mode="detail", notes=notes, wiki_context=wiki_context)
                             if not analysis_result.startswith("⚠️"):
                                 await update_analysis_b_with_notes(user_id, analysis_result, background_tasks)
                             await push_message(user_id, analysis_result)
                         else:
                             await reply_message(reply_token, "先に絵の写真を送ってください📷")
+                            
                     elif user_message == "詳しく":
                         if user_id in last_image_store:
                             await reply_message(reply_token, "🎨 絵を見ています…少しだけお待ちください")
@@ -449,6 +464,7 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
                             await push_message(user_id, analysis_result)
                         else:
                             await reply_message(reply_token, "先に絵の写真を送ってください📷")
+                            
                     elif user_message == "振り返って":
                         await reply_message(reply_token, "🎨 これまでの絵を振り返っています…少しだけお待ちください")
                         try:
@@ -479,6 +495,7 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
                             await push_message(user_id, "⚠️ 振り返りに失敗しました。もう一度お試しください。")
                     else:
                         await reply_message(reply_token, "絵の写真を送ってください📷")
+                        
                 elif message["type"] == "image":
                     image_id = message["id"]
                     await reply_message(reply_token, "🎨 絵を見ています…少しだけお待ちください")
