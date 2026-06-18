@@ -257,6 +257,7 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
                     return True
                 else:
                     print(f"textが空: outputs={outputs}")
+                    return False
             print(f"Difyエラー: status={response.status_code}")
             return False
     except Exception as e:
