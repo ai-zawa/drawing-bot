@@ -180,6 +180,33 @@ async def get_existing_concepts(user_id: str) -> list:
         print(f"❌ 概念一覧取得エラー: {e}")
         return []
 
+# タグに対応するwiki_pagesを取得する関数
+async def get_wiki_context(user_id: str, tags: list) -> str:
+    try:
+        if not tags:
+            return ""
+        
+        result = supabase.table("wiki_pages")\
+            .select("concept, summary")\
+            .eq("user_id", user_id)\
+            .in_("concept", tags)\
+            .execute()
+        
+        if not result.data:
+            return ""
+        
+        context_parts = []
+        for page in result.data:
+            concept = page.get("concept")
+            summary = page.get("summary")
+            if concept and summary:
+                context_parts.append(f"【{concept}】\n{summary}")
+        
+        return "\n\n".join(context_parts) if context_parts else ""
+    except Exception as e:
+        print(f"❌ Wiki context取得エラー: {e}")
+        return ""
+
 async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str):
     try:
         concept = wiki_data.get("concept")
