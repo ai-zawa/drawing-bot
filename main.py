@@ -83,6 +83,8 @@ async def analyze_with_dify(image_data: bytes, mode: str = "quick", notes: str =
             inputs = {"image": {"transfer_method": "local_file", "upload_file_id": file_id, "type": "image"}}
             if notes:
                 inputs["notes"] = notes
+            if wiki_context:
+                inputs["wiki_context"] = wiki_context
             payload = {"inputs": inputs, "response_mode": "blocking", "user": "line-user"}
             run_response = await client.post(run_url, headers=headers, json=payload)
             if run_response.status_code == 200:
