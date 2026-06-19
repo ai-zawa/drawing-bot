@@ -437,20 +437,23 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
                             await reply_message(reply_token, "🎨 絵を見ています…少しだけお待ちください")
                             image_data = last_image_store[user_id]
                             
-                            # 最新のタグを取得してwiki_contextを構築
-                            latest = supabase.table("drawings")\
-                                .select("tags")\
-                                .eq("user_id", user_id)\
-                                .order("created_at", desc=True)\
-                                .limit(1)\
-                                .execute()
-                            tags = latest.data[0].get("tags") or [] if latest.data else []
-                            wiki_context = await get_wiki_context(user_id, tags)
+                            # 1回目：Ingest用（wiki_contextなし）
+                            analysis_for_ingest = await analyze_with_dify(image_data, mode="detail", notes=notes)
                             
-                            analysis_result = await analyze_with_dify(image_data, mode="detail", notes=notes, wiki_context=wiki_context)
-                            if not analysis_result.startswith("⚠️"):
-                                await update_analysis_b_with_notes(user_id, analysis_result, background_tasks)
-                            await push_message(user_id, analysis_result)
+                            if not analysis_for_ingest.startswith("⚠️"):
+                                tags = extract_tags(analysis_for_ingest)
+                                wiki_context = await get_wiki_context(user_id, tags)
+                                
+                                # 2回目：親向け（wiki_contextあり）
+                                if wiki_context:
+                                    analysis_for_parent = await analyze_with_dify(image_data, mode="detail", notes=notes, wiki_context=wiki_context)
+                                else:
+                                    analysis_for_parent = analysis_for_ingest
+                                
+                                await update_analysis_b_with_notes(user_id, analysis_for_ingest, background_tasks)
+                                await push_message(user_id, analysis_for_parent)
+                            else:
+                                await push_message(user_id, analysis_for_ingest)
                         else:
                             await reply_message(reply_token, "先に絵の写真を送ってください📷")
                             
