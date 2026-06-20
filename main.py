@@ -274,58 +274,84 @@ async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str):
     except Exception as e:
         print(f"❌ Wiki保存エラー: {e}")
 
-async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, drawing_id: str):
+async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, drawing_id: str, max_retries: int = 2):
     print(f"run_ingest開始: concept={concept}, has_notes={bool(notes)}")
-    try:
-        existing_concepts = await get_existing_concepts(user_id)
-        existing_concepts_str = ", ".join(existing_concepts) if existing_concepts else ""
-        print(f"既存概念一覧: {existing_concepts_str}")  # この行を追加
+    
+    existing_concepts = await get_existing_concepts(user_id)
+    existing_concepts_str = ", ".join(existing_concepts) if existing_concepts else ""
+    print(f"既存概念一覧: {existing_concepts_str}")
+    
+    has_notes = "true" if notes else "false"
+    today = datetime.now(timezone.utc).date().isoformat()
+    analysis_with_date = f"[{today}]\n{analysis}"
+    
+    headers = {"Authorization": f"Bearer {DIFY_API_KEY_INGEST}"}
+    run_url = f"{DIFY_API_URL}/workflows/run"
+    
+    for attempt in range(max_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                payload = {
+                    "inputs": {
+                        "concept": concept,
+                        "analysis": analysis_with_date,
+                        "notes": notes or "",
+                        "has_notes": has_notes,
+                        "existing_concepts": existing_concepts_str,
+                        "supabase_url": SUPABASE_URL,
+                        "supabase_key": SUPABASE_KEY,
+                        "user_id": user_id
+                    },
+                    "response_mode": "blocking",
+                    "user": "line-user"
+                }
+                
+                response = await client.post(run_url, headers=headers, json=payload)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    outputs = result.get("data", {}).get("outputs", {})
+                    
+                    text = ""
+                    if "text" in outputs:
+                        text = outputs["text"]
+                    elif "output" in outputs:
+                        output_list = outputs["output"]
+                        if isinstance(output_list, list) and len(output_list) > 0:
+                            text = output_list[0]
+                    
+                    if text:
+                        import json
+                        clean = text.replace("```json", "").replace("```", "").strip()
+                        wiki_data = json.loads(clean)
+                        await save_wiki_page(user_id, wiki_data, drawing_id)
+                        return True
+                    else:
+                        print(f"textが空: outputs={outputs}")
+                        if attempt < max_retries:
+                            print(f"リトライします（{attempt + 1}回目）")
+                            await asyncio.sleep(3)
+                            continue
+                        return False
+                
+                if response.status_code in (503, 504, 429):
+                    print(f"リトライ対象エラー(status={response.status_code})。{attempt + 1}回目")
+                    if attempt < max_retries:
+                        await asyncio.sleep(3)
+                        continue
+                
+                print(f"Difyエラー: status={response.status_code}")
+                return False
         
-        has_notes = "true" if notes else "false"
-        today = datetime.now(timezone.utc).date().isoformat()
-        analysis_with_date = f"[{today}]\n{analysis}"
-        headers = {"Authorization": f"Bearer {DIFY_API_KEY_INGEST}"}
-        run_url = f"{DIFY_API_URL}/workflows/run"
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            payload = {
-                "inputs": {
-                    "concept": concept,
-                    "analysis": analysis_with_date,
-                    "notes": notes or "",
-                    "has_notes": has_notes,
-                    "existing_concepts": existing_concepts_str,
-                    "supabase_url": SUPABASE_URL,
-                    "supabase_key": SUPABASE_KEY,
-                    "user_id": user_id
-                },
-                "response_mode": "blocking",
-                "user": "line-user"
-            }
-            response = await client.post(run_url, headers=headers, json=payload)
-            if response.status_code == 200:
-                result = response.json()
-                outputs = result.get("data", {}).get("outputs", {})
-                text = ""
-                if "text" in outputs:
-                    text = outputs["text"]
-                elif "output" in outputs:
-                    output_list = outputs["output"]
-                    if isinstance(output_list, list) and len(output_list) > 0:
-                        text = output_list[0]
-                if text:
-                    import json
-                    clean = text.replace("```json", "").replace("```", "").strip()
-                    wiki_data = json.loads(clean)
-                    await save_wiki_page(user_id, wiki_data, drawing_id)
-                    return True
-                else:
-                    print(f"textが空: outputs={outputs}")
-                    return False
-            print(f"Difyエラー: status={response.status_code}")
+        except Exception as e:
+            print(f"❌ Ingestエラー: {e}")
+            if attempt < max_retries:
+                await asyncio.sleep(3)
+                continue
             return False
-    except Exception as e:
-        print(f"❌ Ingestエラー: {e}")
-        return False
+    
+    return False
+
 
 async def ingest_all_concepts(user_id: str, tags: list, analysis: str, notes: str, record_id: str):
     for concept in tags:
