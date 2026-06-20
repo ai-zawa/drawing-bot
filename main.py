@@ -209,6 +209,29 @@ async def get_wiki_context(user_id: str, tags: list) -> str:
         print(f"❌ Wiki context取得エラー: {e}")
         return ""
 
+# 全概念ページのsummaryを取得する関数（Aモード用）
+async def get_all_wiki_summaries(user_id: str) -> str:
+    try:
+        result = supabase.table("wiki_pages")\
+            .select("concept, summary")\
+            .eq("user_id", user_id)\
+            .execute()
+        
+        if not result.data:
+            return ""
+        
+        context_parts = []
+        for page in result.data:
+            concept = page.get("concept")
+            summary = page.get("summary")
+            if concept and summary:
+                context_parts.append(f"【{concept}】\n{summary}")
+        
+        return "\n\n".join(context_parts) if context_parts else ""
+    except Exception as e:
+        print(f"❌ 全Wiki取得エラー: {e}")
+        return ""
+
 async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str):
     try:
         concept = wiki_data.get("concept")
