@@ -414,6 +414,37 @@ def extract_tags(analysis_text: str) -> list:
         print(f"❌ タグ抽出エラー: {e}")
     return tags
 
+
+# 「詳しく」「ちなみに」の重い処理をまとめてバックグラウンドで実行する関数
+async def handle_detail_command(user_id: str, image_data: bytes, notes: str = None):
+    try:
+        # 1回目：Ingest用（wiki_contextなし）
+        analysis_for_ingest = await analyze_with_dify(image_data, mode="detail", notes=notes)
+        
+        if analysis_for_ingest.startswith("⚠️"):
+            await push_message(user_id, analysis_for_ingest)
+            return
+        
+        tags = extract_tags(analysis_for_ingest)
+        wiki_context = await get_wiki_context(user_id, tags)
+        
+        # 2回目：親向け（wiki_contextあり）
+        if wiki_context:
+            analysis_for_parent = await analyze_with_dify(image_data, mode="detail", notes=notes, wiki_context=wiki_context)
+        else:
+            analysis_for_parent = analysis_for_ingest
+        
+        if notes:
+            await update_analysis_b_with_notes(user_id, analysis_for_ingest)
+        else:
+            await update_analysis_b(user_id, analysis_for_ingest)
+        
+        await push_message(user_id, analysis_for_parent)
+    except Exception as e:
+        print(f"❌ handle_detail_commandエラー: {e}")
+        await push_message(user_id, "⚠️ 処理中にエラーが発生しました。もう一度お試しください。")
+
+
 async def save_image(user_id: str, image_data: bytes) -> str:
     try:
         file_name = f"{user_id}/{uuid.uuid4()}.jpg"
