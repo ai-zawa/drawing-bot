@@ -430,7 +430,7 @@ async def save_drawing(user_id: str, image_path: str = None, analysis_a: str = N
     except Exception as e:
         print(f"❌ Drawing保存エラー: {e}")
 
-async def update_analysis_b(user_id: str, analysis_b: str, background_tasks: BackgroundTasks):
+async def update_analysis_b(user_id: str, analysis_b: str):
     try:
         result = supabase.table("drawings").select("id").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
         if result.data:
@@ -441,7 +441,7 @@ async def update_analysis_b(user_id: str, analysis_b: str, background_tasks: Bac
                 update_data["tags"] = tags
             supabase.table("drawings").update(update_data).eq("id", record_id).execute()
             if tags:
-                background_tasks.add_task(ingest_all_concepts, user_id, tags, analysis_b, "", record_id)
+                await ingest_all_concepts(user_id, tags, analysis_b, "", record_id)
             return True
         return False
     except Exception as e:
@@ -449,7 +449,7 @@ async def update_analysis_b(user_id: str, analysis_b: str, background_tasks: Bac
         return False
 
 
-async def update_analysis_b_with_notes(user_id: str, analysis_b: str, background_tasks: BackgroundTasks):
+async def update_analysis_b_with_notes(user_id: str, analysis_b: str):
     try:
         result = supabase.table("drawings").select("id, notes").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
         if result.data:
@@ -462,12 +462,13 @@ async def update_analysis_b_with_notes(user_id: str, analysis_b: str, background
                 update_data["tags"] = tags
             supabase.table("drawings").update(update_data).eq("id", record_id).execute()
             if tags:
-                background_tasks.add_task(ingest_all_concepts, user_id, tags, analysis_b, notes, record_id)
+                await ingest_all_concepts(user_id, tags, analysis_b, notes, record_id)
             return True
         return False
     except Exception as e:
         print(f"❌ ちなみにモードB更新エラー: {e}")
         return False
+
 
 async def update_notes(user_id: str, notes: str):
     try:
