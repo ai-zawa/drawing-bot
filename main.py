@@ -601,7 +601,9 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
                     await reply_message(reply_token, "🎨 絵を見ています…少しだけお待ちください")
                     image_data = await get_line_image(image_id)
                     if image_data:
-                        analysis_result = await analyze_with_dify(image_data, mode="quick")
+                        # 全概念ページのsummaryを取得してAモードに渡す
+                        wiki_context = await get_all_wiki_summaries(user_id)
+                        analysis_result = await analyze_with_dify(image_data, mode="quick", wiki_context=wiki_context)
                         if analysis_result.startswith("⚠️"):
                             await push_message(user_id, analysis_result)
                         else:
@@ -612,6 +614,7 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
                             await push_message(user_id, "💡「詳しく」→ より詳細な分析\n💡「ちなみに〇〇」→ 付帯情報を加えた詳細分析\n💡「振り返って」→ これまでの絵を振り返る")
                     else:
                         await push_message(user_id, "⚠️ 画像の取得に失敗しました。もう一度お試しください。")
+                        
     except Exception as e:
         print(f"❌ Webhookエラー: {e}")
     return {"status": "ok"}
