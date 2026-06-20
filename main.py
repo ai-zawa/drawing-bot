@@ -279,6 +279,8 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
     try:
         existing_concepts = await get_existing_concepts(user_id)
         existing_concepts_str = ", ".join(existing_concepts) if existing_concepts else ""
+        print(f"既存概念一覧: {existing_concepts_str}")  # この行を追加
+        
         has_notes = "true" if notes else "false"
         today = datetime.now(timezone.utc).date().isoformat()
         analysis_with_date = f"[{today}]\n{analysis}"
