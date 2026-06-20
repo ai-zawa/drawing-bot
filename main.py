@@ -215,30 +215,62 @@ async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str):
         if not concept:
             print(f"conceptが空のためスキップ")
             return
+        
         existing = await get_wiki_page(user_id, concept)
+        
+        # タイムラインの結合（過去を保持して新規を追加）
+        timeline = []
+        if existing and existing.get("timeline"):
+            timeline = existing.get("timeline")
+            if isinstance(timeline, str):
+                import json
+                timeline = json.loads(timeline)
+        new_entry = wiki_data.get("new_timeline_entry")
+        if new_entry:
+            timeline.insert(0, new_entry)  # 最新を先頭に
+        
+        # 各スキーマ配列の結合（重複排除・順序維持）
+        def merge_list(field_name, new_field_name):
+            old_list = (existing.get(field_name) or []) if existing else []
+            new_list = wiki_data.get(new_field_name) or []
+            combined = list(old_list)
+            for item in new_list:
+                if item not in combined:
+                    combined.append(item)
+            return combined
+        
+        exploration = merge_list("schema_exploration", "new_exploration")
+        narrative = merge_list("schema_narrative", "new_narrative")
+        relationship = merge_list("schema_relationship", "new_relationship")
+        inquiry = merge_list("schema_inquiry", "new_inquiry")
+        
+        # source_drawing_idsの更新
         if existing:
             existing_ids = existing.get("source_drawing_ids") or []
             if drawing_id not in existing_ids:
                 existing_ids.append(drawing_id)
         else:
             existing_ids = [drawing_id]
+        
         data = {
             "user_id": user_id,
             "concept": concept,
             "summary": wiki_data.get("summary"),
-            "schema_exploration": wiki_data.get("schema_exploration"),
-            "schema_narrative": wiki_data.get("schema_narrative"),
-            "schema_relationship": wiki_data.get("schema_relationship"),
-            "schema_inquiry": wiki_data.get("schema_inquiry"),
-            "timeline": wiki_data.get("timeline"),
+            "schema_exploration": exploration,
+            "schema_narrative": narrative,
+            "schema_relationship": relationship,
+            "schema_inquiry": inquiry,
+            "timeline": timeline,
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "source_drawing_ids": existing_ids
         }
+        
         if existing:
             supabase.table("wiki_pages").update(data).eq("user_id", user_id).eq("concept", concept).execute()
         else:
             supabase.table("wiki_pages").insert(data).execute()
-        print(f"Wiki保存完了: concept={concept}")
+        
+        print(f"Wiki保存（差分マージ）完了: concept={concept}")
     except Exception as e:
         print(f"❌ Wiki保存エラー: {e}")
 
