@@ -1,125 +1,173 @@
 # Amulet 🎨
 
-> 娘の絵をAIが分析し、親の観察眼を拡張するLINE Bot
+**子供の絵をAIが分析し、親の観察眼を拡張するLINEボット**
 
+5歳の娘が描く絵を、LINE × Dify × Gemini で分析し、親が気づかなかった視点を届けます。
+レッジョ・エミリア教育の「子供には100の言葉がある」という思想を背骨に、
+子供の表現というカオスを、テクノロジーがそっと秩序立てることを目指しています。
 
-![Python](https://img.shields.io/badge/Python-3.11-blue)
-(https://python.org)
+> 子供の「100の言葉」をありのまま受け止め、テクノロジーがそのカオスを秩序立て、親の観察眼を拡張する。
 
+---
 
-![FastAPI](https://img.shields.io/badge/FastAPI-latest-green)
-(https://fastapi.tiangolo.com)
+## このプロジェクトについて
 
-![Dify](https://img.shields.io/badge/Dify-latest-orange)
-(https://dify.ai)
+事業会社勤務の非エンジニアが、AIエンジニアを志す第一歩として開発しているプロダクトです。
+「何を作るか」「なぜ作るか」を一貫して言語化しながら、設計と実装を進めています。
 
-## 概要
+開発の過程は、思想・設計・実装・考察の各段階をZennに記録しています（記事リンクは末尾）。
 
-LINEで子供の絵の写真を送ると、レッジョ・エミリア教育・脳科学・発達心理学などの知見を持つAIが分析し、親の観察眼を拡張します。
+---
 
-**親がより豊かに子供と向き合うためのツールです。**
+## 何ができるか
 
-## 機能
+LINEで娘の絵の写真を送ると、AIがアトリエリスタ（レッジョ・エミリアにおける芸術の専門家）の視点で分析します。
 
-### モードA「その場で楽しむ」
-娘が絵を持ってきたその瞬間に使います。この絵にしか使えない具体的な問いかけを3つ提案します。
+| 操作 | 動作 |
+| --- | --- |
+| 📷 画像を送る | **モードA**：その場で楽しむための問いかけを3つ提案 |
+| 💬「詳しく」 | **モードB**：4つの視点（探究・世界・対話・成長）で深く分析 |
+| 💬「ちなみに〇〇」 | 付帯情報（娘が話した内容）を加えて、より深く分析 |
+| 💬「振り返って」 | 過去の絵を横断し、成長の変化を読み解く |
 
-### モードB「深く知る」
-「詳しく」と送ると起動します。4つのセクションで構成された深い分析を返します。
+絵が増えるたびに、AIは娘専用の知識ベース（**LLM Wiki**）を自動で育てていきます。
+「パパの顔」「電車」といった概念ページが自動生成され、絵を重ねるほど解釈が深まります。
 
-- 【描いている間に起きていること】
-- 【この子が見ている世界】
-- 【より一緒に楽しむ】
-- 【残しておきたい成長】
+---
 
-### 付帯情報の追加
-「ちなみに〇〇」と送ると、付帯情報を加えたモードBの分析が返ります。　
+## 設計思想
 
-例：「ちなみに真ん中の塔は東京タワーだって」
+### Negative Constraints（絶対にしないこと）
 
-## システム構成
+このシステムには「してはいけないこと」を明示的に定義しています。
+AIが答えを出すのではなく、親の発見を助けるための設計です。
+
+- ❌ 比較しない（他の子供・発達の標準値との比較）
+- ❌ 評価しない（「上手い」「すごい」などの評価語）
+- ❌ 診断しない（発達の遅れの示唆）
+- ❌ 断定・予言しない（才能や将来の決めつけ）
+- ❌ 親に処方しない（「〇〇すべき」という指導）
+
+### 抽出はAI、結合はコード
+
+LLM Wikiの更新では、**意味の解釈はAIが、状態の管理はコードが**担当します。
+過去データの保持をLLMの「約束」に依存させると、確率的に記録が変質するリスクがあるため、
+子供の「100の言葉」を1ミリも削らないよう、結合は決定論的なコードで保証しています。
+
+```
+意味を読み解き、新しい発見を抽出する  → AIの仕事（意味論的処理）
+過去の記録を絶対に欠落させずに結合する → コードの仕事（決定論的処理）
+```
+
+### マスタリストを作らない
+
+タグの正規化に「正解リスト」を用意しません。
+あらかじめ大人が概念を決めてしまうと、「100の言葉」を有限のリストに閉じ込めてしまうためです。
+代わりに、AIが意味で照合し、束ねるか・新しく作るかを判断します。
+
+---
+
+## アーキテクチャ
+
 ```
 スマホ（LINE）
-　↓ 娘の絵の写真を送る
-LINEサーバー（Messaging API）
+　↓ 娘の絵の写真／テキストを送る
+LINE Messaging API
 　↓ Webhookで転送
-Render.com（Python/FastAPI）
-　↓ 画像を取得してDifyへ転送
+Render.com（Python / FastAPI）
+　↓ 即時応答（reply）＋ 重い処理はBackgroundTasksへ
 Dify（ワークフロー）
-　↓ Geminiで画像分析
-Render.com
-　↓ 結果をLINEへ返送
+　↓ Geminiで画像分析・概念抽出・Wiki更新
+Supabase（DB / Storage）
+　↓ 一次情報・二次情報・LLM Wikiを永続化
 スマホ（LINE）
-　↓ 分析結果が届く
+　↓ 分析結果がプッシュ通知で届く
 ```
 
-## 技術スタック
+### データの3層構造
 
-| サービス | 役割 |
-|---------|------|
-| LINE Messaging API | フロントエンド |
-| Python / FastAPI | 中間サーバー |
-| Render.com | ホスティング |
-| Dify | AIワークフロー |
-| Gemini 2.5 Flash Lite | LLM（画像分析） |
-| Supabase | データベース・画像ストレージ |
+| 層 | 内容 | 保存先 |
+| --- | --- | --- |
+| 一次情報 | 絵・付帯情報（生データ・不変） | Supabase Storage / `drawings` |
+| 二次情報 | 1枚ごとの解釈・概念タグ | `drawings` |
+| 三次情報 | 概念ごとに育つLLM Wiki | `wiki_pages` |
 
-## セットアップ
+### 使用技術
 
-### 必要な環境変数
+| サービス | 役割 | 選定理由 |
+| --- | --- | --- |
+| LINE Messaging API | フロントエンド | 日本の親にとって摩擦が最も低い |
+| Python / FastAPI | 中間サーバー | 軽量・シンプル |
+| Render.com | ホスティング | 無料枠で始められる |
+| Dify | AIワークフロー | ノーコードでLLMを管理 |
+| Gemini 2.5 Flash Lite | LLM | 画像分析対応・低コスト |
+| Supabase | DB / Storage | Postgres・ベクトル拡張・RLS |
 
-Render.comの環境変数に以下を設定してください。
+### Difyワークフロー
 
-| Key | 説明 |
-|-----|------|
-| LINE_CHANNEL_ACCESS_TOKEN | LINEのチャンネルアクセストークン |
-| LINE_CHANNEL_SECRET | LINEのチャンネルシークレット |
-| DIFY_API_KEY | DifyモードAのAPIキー |
-| DIFY_API_KEY_DETAIL | DifyモードBのAPIキー |
-| DIFY_API_URL | DifyのAPIサーバーURL |
-| SUPABASE_URL | SupabaseのプロジェクトURL |
-| SUPABASE_KEY | Supabaseのanon publicキー |
+| ワークフロー | 役割 |
+| --- | --- |
+| `drawing-bot-quick` | モードA（その場で楽しむ） |
+| `drawing-bot` | モードB（深く知る） |
+| `drawing-bot-review` | 振り返り（過去の絵と比較） |
+| `drawing-bot-ingest` | LLM Wikiの更新（名寄せ・差分抽出） |
 
-### Supabaseのテーブル設計
+---
 
-```sql
-create extension if not exists vector;
+## 実装のハイライト
 
-create table drawings (
-  id uuid default gen_random_uuid() primary key,
-  user_id text not null,
-  created_at timestamp with time zone default now(),
-  image_date date default current_date,
-  image_path text,
-  analysis_mode_a text,
-  analysis_mode_b text,
-  notes text,
-  tags text[],
-  embedding vector(768)
-);
+開発で直面した技術課題と、その解決を記録しています。詳細は各Zenn記事を参照してください。
+
+- **LINEの5秒の壁**：重い処理が応答制限とぶつかり、Webhook再送による重複が発生。`BackgroundTasks`で即時応答と非同期処理を分離して解決
+- **504タイムアウト**：Wiki肥大化でLLM出力が長くなりタイムアウト。差分のみ出力させ、結合をコード側に移す「差分マージ」で解決
+- **名寄せの揺らぎ**：子供の多様な表現を、AIが意味で束ねて秩序化。同じ概念が回ごとに統合・分離する「揺らぎ」を、経路依存性として考察
+
+---
+
+## ローカル環境変数
+
+`.env` または ホスティング環境に以下を設定します。
+
+```
+LINE_CHANNEL_ACCESS_TOKEN=
+LINE_CHANNEL_SECRET=
+DIFY_API_KEY=            # モードA
+DIFY_API_KEY_DETAIL=     # モードB
+DIFY_API_KEY_REVIEW=     # 振り返り
+DIFY_API_KEY_INGEST=     # Wiki更新
+DIFY_API_URL=
+SUPABASE_URL=
+SUPABASE_KEY=
 ```
 
-## 使い方
-```
-LINEでボットを友だち追加する
-子供の絵の写真を送る → モードAの分析が返ってくる
-「詳しく」と送る → モードBの詳細分析が返ってくる
-「ちなみに〇〇」と送る → 付帯情報を加えた詳細分析が返ってくる
-```
+---
 
-## 設計思想　Negative Constraints
-```
-このシステムには「絶対にしないこと」を明示的に定義しています。
-比較しない（他の子供・発達の標準値との比較禁止）
-評価しない（「上手い」「すごい」などの評価語禁止）
-診断しない（発達の遅れを示唆する表現禁止）
-断定・予言しない（才能や将来の決めつけ禁止）
-親に処方しない（「〇〇すべき」という指導禁止）
-```
+## ロードマップ
 
-## 今後の予定
-```
-Layer 1：分析結果の蓄積（✅ 実装済み）
-Layer 2：LLM Wiki型の長期記憶（概念ページの自動更新）
-Layer 3：GraphRAGによる関係性の構造化
-```
+- [x] Layer1：一次情報の蓄積（テキストRAG）
+- [x] Layer2：LLM Wiki（概念ページの自動生成・名寄せ・差分マージ）
+- [ ] Lint：概念ページの矛盾・重複の検出と統合（ベクトル類似度）
+- [ ] 破壊的な同化への対処（手動での分割・修正、ロールバック）
+- [ ] Layer3：GraphRAG（概念間の関係性をグラフ化）
+- [ ] マルチモーダルRAG（絵そのもののベクトル検索）
+- [ ] 音声入力による付帯情報の自動テキスト化（専用アプリ化）
+
+---
+
+## 開発記録（Zenn）
+
+このプロジェクトは、思想と実装の両面を記事として公開しています。
+
+1. [ビジネスサイド出身がはじめてAIソリューションを作ってみた話](https://zenn.dev/ai_zawa/articles/97f33858a2aa93)（概要）
+2. [娘の成長をAIが理解するために：Amuletの長期記憶設計（Layer1〜3）](https://zenn.dev/ai_zawa/articles/7c4ff79572986d)（設計構想）
+3. [娘の成長をAIが記憶する：AmuletのLayer1実装記録](https://zenn.dev/ai_zawa/articles/c045c9ae1e7ff5)（Layer1実装）
+4. [AIが「文脈を持つ」とはどういうことか：LLM Wikiで考えるLayer2設計](https://zenn.dev/ai_zawa/articles/2ab6c917a3df53)（思考の記録）
+5. [子供の「100の言葉」をAIが編む：Amulet Layer2（LLM Wiki）実装記録](https://zenn.dev/ai_zawa/articles/584da229002902)（Layer2実装）
+
+---
+
+## ライセンス
+
+[MIT License](./LICENSE)
+
+個人開発・学習目的のプロジェクトですが、コードは自由に利用いただけます（著作権表示の保持のみお願いします）。
