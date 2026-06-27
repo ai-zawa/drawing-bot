@@ -232,9 +232,8 @@ async def get_all_wiki_summaries(user_id: str) -> str:
         print(f"❌ 全Wiki取得エラー: {e}")
         return ""
 
-async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str):
+async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str, concept: str):
     try:
-        concept = wiki_data.get("concept")
         if not concept:
             print(f"conceptが空のためスキップ")
             return
