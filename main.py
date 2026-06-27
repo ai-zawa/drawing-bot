@@ -296,7 +296,7 @@ async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str, concept
     except Exception as e:
         print(f"❌ Wiki保存エラー: {e}")
 
-async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, drawing_id: str, max_retries: int = 2):
+async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, drawing_id: str, max_retries: int = 5):
     print(f"run_ingest開始: concept={concept}, has_notes={bool(notes)}")
     
     existing_concepts = await get_existing_concepts(user_id)
@@ -351,15 +351,18 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
                     else:
                         print(f"textが空: outputs={outputs}")
                         if attempt < max_retries:
-                            print(f"リトライします（{attempt + 1}回目）")
-                            await asyncio.sleep(3)
+                            wait = min(2 ** (attempt + 1), 30)
+                            print(f"リトライします（{attempt + 1}回目、{wait}秒待機）")
+                            await asyncio.sleep(wait)
                             continue
                         return False
                 
                 if response.status_code in (503, 504, 429):
                     print(f"リトライ対象エラー(status={response.status_code})。{attempt + 1}回目")
                     if attempt < max_retries:
-                        await asyncio.sleep(3)
+                        wait = min(2 ** (attempt + 1), 30)
+                        print(f"{wait}秒待機してリトライします")
+                        await asyncio.sleep(wait)
                         continue
                 
                 print(f"Difyエラー: status={response.status_code}")
@@ -368,7 +371,8 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
         except Exception as e:
             print(f"❌ Ingestエラー: {e}")
             if attempt < max_retries:
-                await asyncio.sleep(3)
+                wait = min(2 ** (attempt + 1), 30)
+                await asyncio.sleep(wait)
                 continue
             return False
     
