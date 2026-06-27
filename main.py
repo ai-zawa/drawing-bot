@@ -347,7 +347,7 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
                         import json
                         clean = text.replace("```json", "").replace("```", "").strip()
                         wiki_data = json.loads(clean)
-                        await save_wiki_page(user_id, wiki_data, drawing_id)
+                        await save_wiki_page(user_id, wiki_data, drawing_id, concept)
                         return True
                     else:
                         print(f"textが空: outputs={outputs}")
