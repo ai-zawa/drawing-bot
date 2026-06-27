@@ -67,18 +67,21 @@ async def get_line_image(image_id: str):
         print(f"❌ LINE画像取得エラー: {e}")
         return None
 
-async def analyze_with_dify(image_data: bytes, mode: str = "quick", notes: str = None, wiki_context: str = None):
+
+async def analyze_with_dify(image_data: bytes, mode: str = "quick", notes: str = None, wiki_context: str = None, max_retries: int = 5):
     api_key = DIFY_API_KEY_DETAIL if mode == "detail" else DIFY_API_KEY
     upload_url = f"{DIFY_API_URL}/files/upload"
     headers = {"Authorization": f"Bearer {api_key}"}
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
+            # 画像アップロード（1回だけ）
             files = {"file": ("image.jpg", image_data, "image/jpeg")}
             data = {"user": "line-user"}
             upload_response = await client.post(upload_url, headers=headers, files=files, data=data)
             if upload_response.status_code != 201:
                 return "⚠️ 画像のアップロードに失敗しました。もう一度お試しください。"
             file_id = upload_response.json().get("id")
+            
             run_url = f"{DIFY_API_URL}/workflows/run"
             inputs = {"image": {"transfer_method": "local_file", "upload_file_id": file_id, "type": "image"}}
             if notes:
@@ -86,21 +89,43 @@ async def analyze_with_dify(image_data: bytes, mode: str = "quick", notes: str =
             if wiki_context:
                 inputs["wiki_context"] = wiki_context
             payload = {"inputs": inputs, "response_mode": "blocking", "user": "line-user"}
-            run_response = await client.post(run_url, headers=headers, json=payload)
-            if run_response.status_code == 200:
-                result = run_response.json()
-                text = result.get("data", {}).get("outputs", {}).get("text")
-                if text:
-                    return text
-                return "⚠️ 分析結果を取得できませんでした。もう一度お試しください。"
-            if run_response.status_code == 429:
-                return "⚠️ 現在アクセスが集中しています。しばらく時間をおいてお試しください。"
+            
+            # ワークフロー実行（503等はリトライ）
+            for attempt in range(max_retries + 1):
+                run_response = await client.post(run_url, headers=headers, json=payload)
+                
+                if run_response.status_code == 200:
+                    result = run_response.json()
+                    text = result.get("data", {}).get("outputs", {}).get("text")
+                    if text:
+                        return text
+                    # 200だが空 → リトライ
+                    if attempt < max_retries:
+                        wait = min(2 ** (attempt + 1), 30)
+                        print(f"分析結果が空。{wait}秒待機してリトライ（{attempt + 1}回目）")
+                        await asyncio.sleep(wait)
+                        continue
+                    return "⚠️ 分析結果を取得できませんでした。もう一度お試しください。"
+                
+                if run_response.status_code in (503, 504, 429):
+                    print(f"分析リトライ対象エラー(status={run_response.status_code})。{attempt + 1}回目")
+                    if attempt < max_retries:
+                        wait = min(2 ** (attempt + 1), 30)
+                        print(f"{wait}秒待機してリトライします")
+                        await asyncio.sleep(wait)
+                        continue
+                    return "⚠️ 現在アクセスが集中しています。しばらく時間をおいてお試しください。"
+                
+                print(f"Dify分析エラー: status={run_response.status_code}")
+                return "⚠️ 分析に失敗しました。もう一度お試しください。"
+            
             return "⚠️ 分析に失敗しました。もう一度お試しください。"
     except httpx.TimeoutException:
         return "⚠️ 分析に時間がかかっています。もう一度お試しください。"
     except Exception as e:
         print(f"❌ Dify分析エラー: {e}")
         return "⚠️ エラーが発生しました。しばらく時間をおいてお試しください。"
+
 
 async def get_past_analyses(user_id: str, limit: int = 5) -> str:
     try:
