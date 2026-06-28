@@ -405,9 +405,31 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
 
 
 async def ingest_all_concepts(user_id: str, tags: list, analysis: str, notes: str, record_id: str):
+    failed_tags = []
+    
+    # 1周目：全タグを処理（タグ間は3秒空けて混雑を避ける）
     for concept in tags:
-        await run_ingest(user_id=user_id, concept=concept, analysis=analysis, notes=notes, drawing_id=record_id)
-        await asyncio.sleep(1)
+        success = await run_ingest(user_id=user_id, concept=concept, analysis=analysis, notes=notes, drawing_id=record_id)
+        if not success:
+            print(f"⚠️ 1周目で失敗: concept={concept}")
+            failed_tags.append(concept)
+        await asyncio.sleep(3)
+    
+    # 2周目：失敗したタグだけ、30秒待ってから再挑戦
+    if failed_tags:
+        print(f"🔁 2周目開始: 失敗した{len(failed_tags)}件を再処理します")
+        await asyncio.sleep(30)
+        still_failed = []
+        for concept in failed_tags:
+            success = await run_ingest(user_id=user_id, concept=concept, analysis=analysis, notes=notes, drawing_id=record_id)
+            if not success:
+                still_failed.append(concept)
+            await asyncio.sleep(3)
+        if still_failed:
+            print(f"❌ 2周目でも失敗: {', '.join(still_failed)}")
+        else:
+            print(f"✅ 2周目で全て成功")
+
 
 def extract_tags(analysis_text: str) -> list:
     tags = []
