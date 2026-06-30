@@ -324,7 +324,9 @@ async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str, concept
     except Exception as e:
         print(f"❌ Wiki保存エラー: {e}")
 
-async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, drawing_id: str, max_retries: int = 5):
+async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, drawing_id: str, max_retries: int = None):
+    if max_retries is None:
+        max_retries = INGEST_MAX_RETRIES
     print(f"run_ingest開始: concept={concept}, has_notes={bool(notes)}")
     
     existing_concepts = await get_existing_concepts(user_id)
