@@ -381,7 +381,7 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
                     else:
                         print(f"textが空: outputs={outputs}")
                         if attempt < max_retries:
-                            wait = min(2 ** (attempt + 1), 30)
+                            wait = min(2 ** (attempt + 1), INGEST_MAX_WAIT)
                             print(f"リトライします（{attempt + 1}回目、{wait}秒待機）")
                             await asyncio.sleep(wait)
                             continue
@@ -390,7 +390,7 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
                 if response.status_code in (503, 504, 429):
                     print(f"リトライ対象エラー(status={response.status_code})。{attempt + 1}回目")
                     if attempt < max_retries:
-                        wait = min(2 ** (attempt + 1), 30)
+                        wait = min(2 ** (attempt + 1), INGEST_MAX_WAIT)
                         print(f"{wait}秒待機してリトライします")
                         await asyncio.sleep(wait)
                         continue
@@ -401,7 +401,7 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
         except Exception as e:
             print(f"❌ Ingestエラー: {e}")
             if attempt < max_retries:
-                wait = min(2 ** (attempt + 1), 30)
+                wait = min(2 ** (attempt + 1), INGEST_MAX_WAIT)
                 await asyncio.sleep(wait)
                 continue
             return False
