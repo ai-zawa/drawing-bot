@@ -17,6 +17,8 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 DIFY_API_KEY_REVIEW = os.environ.get("DIFY_API_KEY_REVIEW")
 DIFY_API_KEY_INGEST = os.environ.get("DIFY_API_KEY_INGEST")
+INGEST_MAX_RETRIES = int(os.environ.get("INGEST_MAX_RETRIES", "0"))
+INGEST_MAX_WAIT = int(os.environ.get("INGEST_MAX_WAIT", "30"))
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
