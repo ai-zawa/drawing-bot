@@ -104,7 +104,7 @@ async def analyze_with_dify(image_data: bytes, mode: str = "quick", notes: str =
                         return text
                     # 200だが空 → リトライ
                     if attempt < max_retries:
-                        wait = min(2 ** (attempt + 1), 30)
+                        wait = min(2 ** (attempt + 1), INGEST_MAX_WAIT)
                         print(f"分析結果が空。{wait}秒待機してリトライ（{attempt + 1}回目）")
                         await asyncio.sleep(wait)
                         continue
@@ -113,7 +113,7 @@ async def analyze_with_dify(image_data: bytes, mode: str = "quick", notes: str =
                 if run_response.status_code in (503, 504, 429):
                     print(f"分析リトライ対象エラー(status={run_response.status_code})。{attempt + 1}回目")
                     if attempt < max_retries:
-                        wait = min(2 ** (attempt + 1), 30)
+                        wait = min(2 ** (attempt + 1), INGEST_MAX_WAIT)
                         print(f"{wait}秒待機してリトライします")
                         await asyncio.sleep(wait)
                         continue
