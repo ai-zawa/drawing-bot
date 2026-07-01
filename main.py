@@ -329,6 +329,7 @@ async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str, concept
     except Exception as e:
         print(f"❌ Wiki保存エラー: {e}")
 
+
 async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, drawing_id: str, max_retries: int = None):
     if max_retries is None:
         max_retries = INGEST_MAX_RETRIES
@@ -369,22 +370,24 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
                     result = response.json()
                     outputs = result.get("data", {}).get("outputs", {})
                     
-                    text = ""
-                    if "text" in outputs:
-                        text = outputs["text"]
-                    elif "output" in outputs:
+                    # 終了ノードの出力変数名は "output"、中身は bundled文字列の配列
+                    bundled_str = ""
+                    if "output" in outputs:
                         output_list = outputs["output"]
                         if isinstance(output_list, list) and len(output_list) > 0:
-                            text = output_list[0]
+                            bundled_str = output_list[0]
                     
-                    if text:
+                    if bundled_str:
                         import json
-                        clean = text.replace("```json", "").replace("```", "").strip()
-                        wiki_data = json.loads(clean)
-                        await save_wiki_page(user_id, wiki_data, drawing_id, concept)
+                        # bundled_str = {"concept":"父の肖像","diff":"{...}"} の文字列
+                        bundled = json.loads(bundled_str)
+                        normalized_concept = bundled["concept"]   # 名寄せ後（父の肖像）
+                        wiki_data = json.loads(bundled["diff"])   # summary等の差分
+                        # concept（引数）= 生タグ を original_concept として渡す
+                        await save_wiki_page(user_id, wiki_data, drawing_id, normalized_concept, concept)
                         return True
                     else:
-                        print(f"textが空: outputs={outputs}")
+                        print(f"outputが空: outputs={outputs}")
                         if attempt < max_retries:
                             wait = min(2 ** (attempt + 1), INGEST_MAX_WAIT)
                             print(f"リトライします（{attempt + 1}回目、{wait}秒待機）")
