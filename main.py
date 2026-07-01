@@ -260,7 +260,7 @@ async def get_all_wiki_summaries(user_id: str) -> str:
         print(f"❌ 全Wiki取得エラー: {e}")
         return ""
 
-async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str, concept: str):
+async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str, concept: str, original_concept: str):
     try:
         if not concept:
             print(f"conceptが空のためスキップ")
@@ -277,6 +277,11 @@ async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str, concept
                 timeline = json.loads(timeline)
         new_entry = wiki_data.get("new_timeline_entry")
         if new_entry:
+            # 将来の分化・階層化に備えたメタデータ（遺伝子）を埋め込む
+            new_entry["_metadata"] = {
+                "original_concept": original_concept,  # 名寄せ前の生タグ
+                "drawing_id": drawing_id               # 一次情報へのポインタ
+            }
             timeline.insert(0, new_entry)  # 最新を先頭に
         
         # 各スキーマ配列の結合（重複排除・順序維持）
@@ -320,7 +325,7 @@ async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str, concept
         else:
             supabase.table("wiki_pages").insert(data).execute()
         
-        print(f"Wiki保存（差分マージ）完了: concept={concept}")
+        print(f"Wiki保存（差分マージ）完了: concept={concept}（生タグ: {original_concept}）")
     except Exception as e:
         print(f"❌ Wiki保存エラー: {e}")
 
