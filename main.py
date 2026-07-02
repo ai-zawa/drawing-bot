@@ -464,30 +464,37 @@ async def run_update(user_id: str, normalized_concept: str, original_concept: st
 
 
 async def ingest_all_concepts(user_id: str, tags: list, analysis: str, notes: str, record_id: str):
-    failed_tags = []
-    
-    # 1周目：全タグを処理（タグ間は3秒空けて混雑を避ける）
-    for concept in tags:
-        success = await run_ingest(user_id=user_id, concept=concept, analysis=analysis, notes=notes, drawing_id=record_id)
-        if not success:
-            print(f"⚠️ 1周目で失敗: concept={concept}")
-            failed_tags.append(concept)
-        await asyncio.sleep(3)
-    
-    # 2周目：失敗したタグだけ、30秒待ってから再挑戦
-    if failed_tags:
-        print(f"🔁 2周目開始: 失敗した{len(failed_tags)}件を再処理します")
-        await asyncio.sleep(30)
-        still_failed = []
-        for concept in failed_tags:
-            success = await run_ingest(user_id=user_id, concept=concept, analysis=analysis, notes=notes, drawing_id=record_id)
-            if not success:
-                still_failed.append(concept)
-            await asyncio.sleep(3)
-        if still_failed:
-            print(f"❌ 2周目でも失敗: {', '.join(still_failed)}")
+    # 1. 各生タグを名寄せして、名寄せ後タグを集める
+    #    （生タグ → 名寄せ後 の対応を保持）
+    concept_pairs = []  # (original, normalized) のリスト
+    for original_concept in tags:
+        normalized_list = await run_normalize(user_id, original_concept, analysis)
+        if normalized_list:
+            # 名寄せは通常1タグを返す（normalized_tags[0]）
+            for norm in normalized_list:
+                concept_pairs.append((original_concept, norm))
         else:
-            print(f"✅ 2周目で全て成功")
+            print(f"⚠️ 名寄せ失敗: {original_concept}")
+        await asyncio.sleep(1)
+    
+    # 2. 各(生タグ, 名寄せ後)について、概念ページ更新
+    failed = []
+    for original_concept, normalized_concept in concept_pairs:
+        success = await run_update(user_id, normalized_concept, original_concept, analysis, notes, record_id)
+        if not success:
+            print(f"⚠️ update失敗: {normalized_concept}（生タグ: {original_concept}）")
+            failed.append((original_concept, normalized_concept))
+        await asyncio.sleep(2)
+    
+    # 3. 失敗した更新だけ、30秒待って再挑戦
+    if failed:
+        print(f"🔁 update再挑戦: {len(failed)}件")
+        await asyncio.sleep(30)
+        for original_concept, normalized_concept in failed:
+            success = await run_update(user_id, normalized_concept, original_concept, analysis, notes, record_id)
+            if not success:
+                print(f"❌ 再挑戦も失敗: {normalized_concept}")
+            await asyncio.sleep(3)
 
 
 def extract_tags(analysis_text: str) -> list:
