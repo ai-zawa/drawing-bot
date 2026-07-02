@@ -330,20 +330,75 @@ async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str, concept
         print(f"❌ Wiki保存エラー: {e}")
 
 
-async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, drawing_id: str, max_retries: int = None):
+async def run_normalize(user_id: str, concept: str, analysis: str, max_retries: int = None):
     if max_retries is None:
         max_retries = INGEST_MAX_RETRIES
-    print(f"run_ingest開始: concept={concept}, has_notes={bool(notes)}")
     
     existing_concepts = await get_existing_concepts(user_id)
     existing_concepts_str = ", ".join(existing_concepts) if existing_concepts else ""
-    print(f"既存概念一覧: {existing_concepts_str}")
+    
+    today = datetime.now(timezone.utc).date().isoformat()
+    analysis_with_date = f"[{today}]\n{analysis}"
+    
+    headers = {"Authorization": f"Bearer {DIFY_API_KEY_NORMALIZE}"}
+    run_url = f"{DIFY_API_URL}/workflows/run"
+    
+    for attempt in range(max_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                payload = {
+                    "inputs": {
+                        "concept": concept,
+                        "analysis": analysis_with_date,
+                        "existing_concepts": existing_concepts_str
+                    },
+                    "response_mode": "blocking",
+                    "user": "line-user"
+                }
+                response = await client.post(run_url, headers=headers, json=payload)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    outputs = result.get("data", {}).get("outputs", {})
+                    tags = outputs.get("tags", [])
+                    if tags:
+                        return tags
+                    else:
+                        print(f"名寄せ結果が空: outputs={outputs}")
+                        if attempt < max_retries:
+                            wait = min(2 ** (attempt + 1), INGEST_MAX_WAIT)
+                            await asyncio.sleep(wait)
+                            continue
+                        return []
+                
+                if response.status_code in (503, 504, 429):
+                    print(f"名寄せリトライ(status={response.status_code})。{attempt + 1}回目")
+                    if attempt < max_retries:
+                        wait = min(2 ** (attempt + 1), INGEST_MAX_WAIT)
+                        await asyncio.sleep(wait)
+                        continue
+                
+                print(f"名寄せエラー: status={response.status_code}")
+                return []
+        except Exception as e:
+            print(f"❌ 名寄せエラー: {e}")
+            if attempt < max_retries:
+                wait = min(2 ** (attempt + 1), INGEST_MAX_WAIT)
+                await asyncio.sleep(wait)
+                continue
+            return []
+    return []
+
+
+async def run_update(user_id: str, normalized_concept: str, original_concept: str, analysis: str, notes: str, drawing_id: str, max_retries: int = None):
+    if max_retries is None:
+        max_retries = INGEST_MAX_RETRIES
     
     has_notes = "true" if notes else "false"
     today = datetime.now(timezone.utc).date().isoformat()
     analysis_with_date = f"[{today}]\n{analysis}"
     
-    headers = {"Authorization": f"Bearer {DIFY_API_KEY_INGEST}"}
+    headers = {"Authorization": f"Bearer {DIFY_API_KEY_UPDATE}"}
     run_url = f"{DIFY_API_URL}/workflows/run"
     
     for attempt in range(max_retries + 1):
@@ -351,11 +406,10 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
             async with httpx.AsyncClient(timeout=180.0) as client:
                 payload = {
                     "inputs": {
-                        "concept": concept,
+                        "concept": normalized_concept,
                         "analysis": analysis_with_date,
                         "notes": notes or "",
                         "has_notes": has_notes,
-                        "existing_concepts": existing_concepts_str,
                         "supabase_url": SUPABASE_URL,
                         "supabase_key": SUPABASE_KEY,
                         "user_id": user_id
@@ -363,58 +417,50 @@ async def run_ingest(user_id: str, concept: str, analysis: str, notes: str, draw
                     "response_mode": "blocking",
                     "user": "line-user"
                 }
-                
                 response = await client.post(run_url, headers=headers, json=payload)
                 
                 if response.status_code == 200:
                     result = response.json()
                     outputs = result.get("data", {}).get("outputs", {})
-                    
-                    # 終了ノードの出力変数名は "output"、中身は bundled文字列の配列
-                    bundled_str = ""
-                    if "output" in outputs:
-                        output_list = outputs["output"]
-                        if isinstance(output_list, list) and len(output_list) > 0:
-                            bundled_str = output_list[0]
+                    bundled_str = outputs.get("output", "")
+                    # updateは単一処理なので、outputは文字列（配列でない場合あり）
+                    if isinstance(bundled_str, list):
+                        bundled_str = bundled_str[0] if bundled_str else ""
                     
                     if bundled_str:
                         import json
-                        # bundled_str = {"concept":"父の肖像","diff":"{...}"} の文字列
                         bundled = json.loads(bundled_str)
-                        normalized_concept = bundled["concept"]   # 名寄せ後（父の肖像）
-                        wiki_data = json.loads(bundled["diff"])   # summary等の差分
-                        # concept（引数）= 生タグ を original_concept として渡す
-                        await save_wiki_page(user_id, wiki_data, drawing_id, normalized_concept, concept)
+                        norm_concept = bundled["concept"]
+                        wiki_data = json.loads(bundled["diff"])
+                        await save_wiki_page(user_id, wiki_data, drawing_id, norm_concept, original_concept)
                         return True
                     else:
-                        print(f"outputが空: outputs={outputs}")
+                        print(f"update出力が空: outputs={outputs}")
                         if attempt < max_retries:
                             wait = min(2 ** (attempt + 1), INGEST_MAX_WAIT)
-                            print(f"リトライします（{attempt + 1}回目、{wait}秒待機）")
+                            print(f"updateリトライ（{attempt + 1}回目、{wait}秒）")
                             await asyncio.sleep(wait)
                             continue
                         return False
                 
                 if response.status_code in (503, 504, 429):
-                    print(f"リトライ対象エラー(status={response.status_code})。{attempt + 1}回目")
+                    print(f"updateリトライ(status={response.status_code})。{attempt + 1}回目")
                     if attempt < max_retries:
                         wait = min(2 ** (attempt + 1), INGEST_MAX_WAIT)
-                        print(f"{wait}秒待機してリトライします")
                         await asyncio.sleep(wait)
                         continue
                 
-                print(f"Difyエラー: status={response.status_code}")
+                print(f"updateエラー: status={response.status_code}")
                 return False
-        
         except Exception as e:
-            print(f"❌ Ingestエラー: {e}")
+            print(f"❌ updateエラー: {e}")
             if attempt < max_retries:
                 wait = min(2 ** (attempt + 1), INGEST_MAX_WAIT)
                 await asyncio.sleep(wait)
                 continue
             return False
-    
     return False
+
 
 
 async def ingest_all_concepts(user_id: str, tags: list, analysis: str, notes: str, record_id: str):
