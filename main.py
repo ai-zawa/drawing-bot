@@ -16,7 +16,9 @@ DIFY_API_URL = os.environ.get("DIFY_API_URL")
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 DIFY_API_KEY_REVIEW = os.environ.get("DIFY_API_KEY_REVIEW")
-DIFY_API_KEY_INGEST = os.environ.get("DIFY_API_KEY_INGEST")
+DIFY_API_KEY_NORMALIZE = os.environ.get("DIFY_API_KEY_NORMALIZE")
+DIFY_API_KEY_UPDATE = os.environ.get("DIFY_API_KEY_UPDATE")
+
 INGEST_MAX_RETRIES = int(os.environ.get("INGEST_MAX_RETRIES", "0"))
 INGEST_MAX_WAIT = int(os.environ.get("INGEST_MAX_WAIT", "30"))
 
