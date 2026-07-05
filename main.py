@@ -622,17 +622,6 @@ async def update_notes(user_id: str, notes: str):
         print(f"❌ メモ更新エラー: {e}")
         return False
 
-async def update_analysis_b_direct(user_id: str, analysis_b: str, background_tasks: BackgroundTasks):
-    try:
-        result = supabase.table("drawings").select("id").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
-        if result.data:
-            record_id = result.data[0]["id"]
-            supabase.table("drawings").update({"analysis_mode_b": analysis_b}).eq("id", record_id).execute()
-            return True
-        return False
-    except Exception as e:
-        print(f"❌ モードB直接更新エラー: {e}")
-        return False
 
 @app.get("/")
 @app.head("/")
