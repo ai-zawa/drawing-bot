@@ -536,28 +536,34 @@ def extract_tags(analysis_text: str) -> list:
 # 「詳しく」「ちなみに」の重い処理をまとめてバックグラウンドで実行する関数
 async def handle_detail_command(user_id: str, image_data: bytes, notes: str = None):
     try:
-        # 1回目：Ingest用（wiki_contextなし）
+        # ① モードB(1回目・wiki_contextなし) ← Ingest用の一次情報
         analysis_for_ingest = await analyze_with_dify(image_data, mode="detail", notes=notes)
-        
         if analysis_for_ingest.startswith("⚠️"):
             await push_message(user_id, analysis_for_ingest)
             return
-        
+
+        # ② タグ抽出
         tags = extract_tags(analysis_for_ingest)
+
+        # ③ wiki_context取得（生タグで・軽い・名寄せなし）
         wiki_context = await get_wiki_context(user_id, tags)
-        
-        # 2回目：親向け（wiki_contextあり）
+
+        # ④ モードB(2回目・wiki_contextあり) ← 親に見せる出力
         if wiki_context:
             analysis_for_parent = await analyze_with_dify(image_data, mode="detail", notes=notes, wiki_context=wiki_context)
         else:
             analysis_for_parent = analysis_for_ingest
-        
-        if notes:
-            await update_analysis_b_with_notes(user_id, analysis_for_ingest)
-        else:
-            await update_analysis_b(user_id, analysis_for_ingest)
-        
+
+        # ⑤ drawings保存（Ingestはしない・record_idを得る）
+        record_id = await save_analysis_only(user_id, analysis_for_ingest, tags, notes)
+
+        # ⑥ 先にユーザーへpush（Wiki更新を待たせない）
         await push_message(user_id, analysis_for_parent)
+
+        # ⑦ ユーザー応答の後で、Wiki更新（重い・503でも粘る）
+        if tags and record_id:
+            await ingest_all_concepts(user_id, tags, analysis_for_ingest, notes or "", record_id)
+
     except Exception as e:
         print(f"❌ handle_detail_commandエラー: {e}")
         await push_message(user_id, "⚠️ 処理中にエラーが発生しました。もう一度お試しください。")
@@ -572,6 +578,7 @@ async def save_image(user_id: str, image_data: bytes) -> str:
         print(f"❌ 画像保存エラー: {e}")
         return None
 
+
 async def save_drawing(user_id: str, image_path: str = None, analysis_a: str = None, analysis_b: str = None, notes: str = None):
     try:
         data = {"user_id": user_id, "image_path": image_path, "analysis_mode_a": analysis_a, "analysis_mode_b": analysis_b, "notes": notes}
@@ -579,44 +586,28 @@ async def save_drawing(user_id: str, image_path: str = None, analysis_a: str = N
     except Exception as e:
         print(f"❌ Drawing保存エラー: {e}")
 
-async def update_analysis_b(user_id: str, analysis_b: str):
+
+async def save_analysis_only(user_id: str, analysis_b: str, tags: list, notes: str = None) -> str:
+    """drawingsにanalysisとtagsを保存し、record_idを返す（Ingestはしない）"""
     try:
         result = supabase.table("drawings").select("id").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
-        if result.data:
-            record_id = result.data[0]["id"]
-            tags = extract_tags(analysis_b)
-            update_data = {"analysis_mode_b": analysis_b}
-            if tags:
-                update_data["tags"] = tags
-            supabase.table("drawings").update(update_data).eq("id", record_id).execute()
-            if tags:
-                await ingest_all_concepts(user_id, tags, analysis_b, "", record_id)
-            return True
-        return False
-    except Exception as e:
-        print(f"❌ モードB更新エラー: {e}")
-        return False
+        if not result.data:
+            return None
+        record_id = result.data[0]["id"]
 
+        update_data = {}
+        if notes:
+            update_data["analysis_mode_b_with_notes"] = analysis_b
+        else:
+            update_data["analysis_mode_b"] = analysis_b
+        if tags:
+            update_data["tags"] = tags
 
-async def update_analysis_b_with_notes(user_id: str, analysis_b: str):
-    try:
-        result = supabase.table("drawings").select("id, notes").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
-        if result.data:
-            record = result.data[0]
-            record_id = record["id"]
-            notes = record.get("notes") or ""
-            tags = extract_tags(analysis_b)
-            update_data = {"analysis_mode_b_with_notes": analysis_b}
-            if tags:
-                update_data["tags"] = tags
-            supabase.table("drawings").update(update_data).eq("id", record_id).execute()
-            if tags:
-                await ingest_all_concepts(user_id, tags, analysis_b, notes, record_id)
-            return True
-        return False
+        supabase.table("drawings").update(update_data).eq("id", record_id).execute()
+        return record_id
     except Exception as e:
-        print(f"❌ ちなみにモードB更新エラー: {e}")
-        return False
+        print(f"❌ analysis保存エラー: {e}")
+        return None
 
 
 async def update_notes(user_id: str, notes: str):
