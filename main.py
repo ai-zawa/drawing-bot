@@ -343,6 +343,26 @@ async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str, concept
         print(f"❌ Wiki保存エラー: {e}")
 
 
+async def enqueue_failed_update(user_id: str, drawing_id: str, original_concept: str, normalized_concept: str, analysis: str, notes: str, needs_normalize: bool = False):
+    """処理に失敗したタグを再処理キューに記録する"""
+    try:
+        data = {
+            "user_id": user_id,
+            "drawing_id": drawing_id,
+            "original_concept": original_concept,
+            "normalized_concept": normalized_concept,
+            "analysis": analysis,
+            "notes": notes or "",
+            "needs_normalize": needs_normalize,  # ★名寄せが必要かを明示
+            "status": "pending"
+        }
+        supabase.table("ingest_queue").insert(data).execute()
+        flag = "（要名寄せ）" if needs_normalize else ""
+        print(f"📥 キューに記録{flag}: {normalized_concept}（生タグ: {original_concept}）")
+    except Exception as e:
+        print(f"❌ キュー記録エラー: {e}")
+
+
 async def run_normalize(user_id: str, concept: str, analysis: str, max_retries: int = None):
     if max_retries is None:
         max_retries = INGEST_MAX_RETRIES
