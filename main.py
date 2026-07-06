@@ -611,6 +611,82 @@ async def ingest_all_concepts(user_id: str, tags: list, analysis: str, notes: st
             await asyncio.sleep(3)
 
 
+async def process_ingest_queue(user_id: str = None, limit: int = 20):
+    """pendingのキューを再処理する"""
+    try:
+        query = supabase.table("ingest_queue").select("*").eq("status", "pending")
+        if user_id:
+            query = query.eq("user_id", user_id)
+        result = query.limit(limit).execute()
+
+        if not result.data:
+            print("キューは空です")
+            return 0
+
+        processed = 0
+        for row in result.data:
+            queue_id = row["id"]
+            uid = row["user_id"]
+            original_concept = row["original_concept"]
+            normalized_concept = row["normalized_concept"]
+            analysis = row["analysis"]
+            notes = row["notes"]
+            drawing_id = row["drawing_id"]
+
+            # このループ内で名寄せをやり直して成功したか
+            normalize_succeeded = False
+
+            # 名寄せが必要なキューは、まず名寄せからやり直す
+            if row.get("needs_normalize"):
+                normalized_list = await run_normalize(uid, original_concept, analysis)
+                if not normalized_list:
+                    new_count = (row.get("retry_count") or 0) + 1
+                    new_status = "failed" if new_count >= 5 else "pending"
+                    supabase.table("ingest_queue").update({
+                        "retry_count": new_count,
+                        "status": new_status,
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    }).eq("id", queue_id).execute()
+                    print(f"⚠️ 再名寄せ失敗（{new_count}回目）: {original_concept}")
+                    await asyncio.sleep(2)
+                    continue
+                normalized_concept = normalized_list[0]
+                normalize_succeeded = True
+
+            # 概念ページ更新
+            success = await run_update(uid, normalized_concept, original_concept, analysis, notes, drawing_id)
+            if success:
+                supabase.table("ingest_queue").update({
+                    "status": "done",
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }).eq("id", queue_id).execute()
+                processed += 1
+                print(f"✅ キュー処理成功: {normalized_concept}")
+            else:
+                new_count = (row.get("retry_count") or 0) + 1
+                new_status = "failed" if new_count >= 5 else "pending"
+
+                update_data = {
+                    "retry_count": new_count,
+                    "status": new_status,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }
+                # 今回名寄せに成功していたなら、その成果を保存してフラグを折る
+                if normalize_succeeded:
+                    update_data["normalized_concept"] = normalized_concept
+                    update_data["needs_normalize"] = False
+
+                supabase.table("ingest_queue").update(update_data).eq("id", queue_id).execute()
+                print(f"⚠️ キュー処理失敗（{new_count}回目、status={new_status}）: {normalized_concept}")
+            await asyncio.sleep(2)
+
+        print(f"キュー処理完了: {processed}/{len(result.data)} 件成功")
+        return processed
+    except Exception as e:
+        print(f"❌ キュー処理エラー: {e}")
+        return 0
+
+
 def extract_tags(analysis_text: str) -> list:
     tags = []
     try:
