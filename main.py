@@ -455,8 +455,14 @@ async def run_update(user_id: str, normalized_concept: str, original_concept: st
                 if response.status_code == 200:
                     result = response.json()
                     outputs = result.get("data", {}).get("outputs", {})
-                    bundled_str = outputs.get("output", "")
-                    # updateは単一処理なので、outputは文字列（配列でない場合あり）
+                    
+                    # 終了ノードの出力を取り出す（キー名の揺れに両対応）
+                    bundled_str = ""
+                    if "bundled" in outputs:
+                        bundled_str = outputs["bundled"]
+                    elif "output" in outputs:
+                        val = outputs["output"]
+                        bundled_str = val[0] if isinstance(val, list) and val else val
                     if isinstance(bundled_str, list):
                         bundled_str = bundled_str[0] if bundled_str else ""
                     
@@ -493,7 +499,6 @@ async def run_update(user_id: str, normalized_concept: str, original_concept: st
                 continue
             return False
     return False
-
 
 
 async def ingest_all_concepts(user_id: str, tags: list, analysis: str, notes: str, record_id: str):
