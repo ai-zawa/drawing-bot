@@ -26,6 +26,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 last_image_store = {}
 
+
 async def reply_message(reply_token: str, text: str):
     url = "https://api.line.me/v2/bot/message/reply"
     headers = {
@@ -41,6 +42,7 @@ async def reply_message(reply_token: str, text: str):
             await client.post(url, headers=headers, json=payload)
     except Exception as e:
         print(f"❌ LINE返信エラー: {e}")
+
 
 async def push_message(user_id: str, text: str):
     url = "https://api.line.me/v2/bot/message/push"
@@ -58,6 +60,7 @@ async def push_message(user_id: str, text: str):
     except Exception as e:
         print(f"❌ LINEプッシュエラー: {e}")
 
+
 async def get_line_image(image_id: str):
     url = f"https://api-data.line.me/v2/bot/message/{image_id}/content"
     headers = {"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"}
@@ -70,6 +73,7 @@ async def get_line_image(image_id: str):
     except Exception as e:
         print(f"❌ LINE画像取得エラー: {e}")
         return None
+
 
 async def analyze_with_dify(image_data: bytes, mode: str = "quick", notes: str = None, wiki_context: str = None, max_retries: int = None):
     if max_retries is None:
@@ -153,6 +157,7 @@ async def get_past_analyses(user_id: str, limit: int = 5) -> str:
         print(f"❌ 過去データ取得エラー: {e}")
         return None
 
+
 async def analyze_review(current_analysis: str, past_analyses: str) -> str:
     api_key = DIFY_API_KEY_REVIEW
     run_url = f"{DIFY_API_URL}/workflows/run"
@@ -180,12 +185,14 @@ async def analyze_review(current_analysis: str, past_analyses: str) -> str:
         print(f"❌ 振り返りエラー: {e}")
         return "⚠️ エラーが発生しました。しばらく時間をおいてお試しください。"
 
+
 async def save_review(user_id: str, review_text: str, drawing_ids: list):
     try:
         data = {"user_id": user_id, "review_text": review_text, "drawing_ids": drawing_ids}
         supabase.table("reviews").insert(data).execute()
     except Exception as e:
         print(f"❌ 振り返り保存エラー: {e}")
+
 
 async def get_wiki_page(user_id: str, concept: str) -> dict:
     try:
@@ -201,6 +208,7 @@ async def get_wiki_page(user_id: str, concept: str) -> dict:
         print(f"❌ Wiki取得エラー: {e}")
         return None
 
+
 async def get_existing_concepts(user_id: str) -> list:
     try:
         result = supabase.table("wiki_pages")\
@@ -211,6 +219,7 @@ async def get_existing_concepts(user_id: str) -> list:
     except Exception as e:
         print(f"❌ 概念一覧取得エラー: {e}")
         return []
+
 
 # タグに対応するwiki_pagesを取得する関数
 async def get_wiki_context(user_id: str, tags: list) -> str:
@@ -239,6 +248,7 @@ async def get_wiki_context(user_id: str, tags: list) -> str:
         print(f"❌ Wiki context取得エラー: {e}")
         return ""
 
+
 # 全概念ページのsummaryを取得する関数（Aモード用）
 async def get_all_wiki_summaries(user_id: str) -> str:
     try:
@@ -261,6 +271,7 @@ async def get_all_wiki_summaries(user_id: str) -> str:
     except Exception as e:
         print(f"❌ 全Wiki取得エラー: {e}")
         return ""
+
 
 async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str, concept: str, original_concept: str):
     try:
@@ -466,20 +477,20 @@ async def run_update(user_id: str, normalized_concept: str, original_concept: st
 
 
 async def ingest_all_concepts(user_id: str, tags: list, analysis: str, notes: str, record_id: str):
-    # 1. 各生タグを名寄せして、名寄せ後タグを集める
-    #    （生タグ → 名寄せ後 の対応を保持）
-    concept_pairs = []  # (original, normalized) のリスト
+    # 1. 各生タグを名寄せ
+    concept_pairs = []
     for original_concept in tags:
         normalized_list = await run_normalize(user_id, original_concept, analysis)
         if normalized_list:
-            # 名寄せは通常1タグを返す（normalized_tags[0]）
             for norm in normalized_list:
                 concept_pairs.append((original_concept, norm))
         else:
             print(f"⚠️ 名寄せ失敗: {original_concept}")
+            # 名寄せ失敗 → needs_normalize=True でキューに積む
+            await enqueue_failed_update(user_id, record_id, original_concept, original_concept, analysis, notes, needs_normalize=True)
         await asyncio.sleep(1)
-    
-    # 2. 各(生タグ, 名寄せ後)について、概念ページ更新
+
+    # 2. 概念ページ更新
     failed = []
     for original_concept, normalized_concept in concept_pairs:
         success = await run_update(user_id, normalized_concept, original_concept, analysis, notes, record_id)
@@ -487,15 +498,17 @@ async def ingest_all_concepts(user_id: str, tags: list, analysis: str, notes: st
             print(f"⚠️ update失敗: {normalized_concept}（生タグ: {original_concept}）")
             failed.append((original_concept, normalized_concept))
         await asyncio.sleep(2)
-    
-    # 3. 失敗した更新だけ、30秒待って再挑戦
+
+    # 3. 更新失敗分を30秒後に再挑戦
     if failed:
         print(f"🔁 update再挑戦: {len(failed)}件")
         await asyncio.sleep(30)
         for original_concept, normalized_concept in failed:
             success = await run_update(user_id, normalized_concept, original_concept, analysis, notes, record_id)
             if not success:
-                print(f"❌ 再挑戦も失敗: {normalized_concept}")
+                print(f"❌ 再挑戦も失敗 → キューに記録: {normalized_concept}")
+                # 更新失敗 → 名寄せは済んでいるので needs_normalize=False
+                await enqueue_failed_update(user_id, record_id, original_concept, normalized_concept, analysis, notes, needs_normalize=False)
             await asyncio.sleep(3)
 
 
