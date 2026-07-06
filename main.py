@@ -814,10 +814,13 @@ async def update_notes(user_id: str, notes: str):
 @app.get("/")
 @app.head("/")
 
+
 async def health_check():
     return {"status": "ok"}
 
+
 @app.post("/callback")
+
 
 async def callback(request: Request, background_tasks: BackgroundTasks):
     try:
@@ -877,6 +880,10 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
                         except Exception as e:
                             print(f"❌ 振り返りエラー: {e}")
                             await push_message(user_id, "⚠️ 振り返りに失敗しました。もう一度お試しください。")
+                    elif user_message == "キュー処理":
+                        await reply_message(reply_token, "🔄 未処理のWiki更新を再開します…")
+                        processed = await process_ingest_queue(user_id)
+                        await push_message(user_id, f"✅ {processed}件のWiki更新を処理しました")
                     else:
                         await reply_message(reply_token, "絵の写真を送ってください📷")
                         
