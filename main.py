@@ -644,8 +644,8 @@ def extract_tags(analysis_text: str) -> list:
     tagged = []
     try:
         for label, category in category_labels.items():
-            # 「・モチーフ：タグ名」の形式から、タグ名を抽出
-            pattern = rf"[・･]\s*{label}\s*[:：]\s*(.+)"
+            # 行頭の記号（・ ･ - * 等）は任意。「モチーフ：タグ名」に対応
+            pattern = rf"(?:^|\n)\s*[・･\-\*]?\s*{label}\s*[:：]\s*(.+)"
             match = re.search(pattern, analysis_text)
             if match:
                 tag = match.group(1).strip()
