@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request, BackgroundTasks
 import httpx
 import os
 import uuid
+import json
 import asyncio
 from datetime import datetime, timezone
 from supabase import create_client
@@ -90,7 +91,7 @@ async def analyze_with_dify(image_data: bytes, mode: str = "quick", notes: str =
             if upload_response.status_code != 201:
                 return "⚠️ 画像のアップロードに失敗しました。もう一度お試しください。"
             file_id = upload_response.json().get("id")
-            
+
             run_url = f"{DIFY_API_URL}/workflows/run"
             inputs = {"image": {"transfer_method": "local_file", "upload_file_id": file_id, "type": "image"}}
             if notes:
@@ -98,11 +99,11 @@ async def analyze_with_dify(image_data: bytes, mode: str = "quick", notes: str =
             if wiki_context:
                 inputs["wiki_context"] = wiki_context
             payload = {"inputs": inputs, "response_mode": "blocking", "user": "line-user"}
-            
+
             # ワークフロー実行（503等はリトライ）
             for attempt in range(max_retries + 1):
                 run_response = await client.post(run_url, headers=headers, json=payload)
-                
+
                 if run_response.status_code == 200:
                     result = run_response.json()
                     text = result.get("data", {}).get("outputs", {}).get("text")
@@ -115,7 +116,7 @@ async def analyze_with_dify(image_data: bytes, mode: str = "quick", notes: str =
                         await asyncio.sleep(wait)
                         continue
                     return "⚠️ 分析結果を取得できませんでした。もう一度お試しください。"
-                
+
                 if run_response.status_code in (503, 504, 429):
                     print(f"分析リトライ対象エラー(status={run_response.status_code})。{attempt + 1}回目")
                     if attempt < max_retries:
@@ -124,10 +125,10 @@ async def analyze_with_dify(image_data: bytes, mode: str = "quick", notes: str =
                         await asyncio.sleep(wait)
                         continue
                     return "⚠️ 現在アクセスが集中しています。しばらく時間をおいてお試しください。"
-                
+
                 print(f"Dify分析エラー: status={run_response.status_code}")
                 return "⚠️ 分析に失敗しました。もう一度お試しください。"
-            
+
             return "⚠️ 分析に失敗しました。もう一度お試しください。"
     except httpx.TimeoutException:
         return "⚠️ 分析に時間がかかっています。もう一度お試しください。"
@@ -194,108 +195,59 @@ async def save_review(user_id: str, review_text: str, drawing_ids: list):
         print(f"❌ 振り返り保存エラー: {e}")
 
 
-async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str, concept: str, original_concept: str, category: str):
-    try:
-        if not concept:
-            print(f"conceptが空のためスキップ")
-            return
-        
-        # 既存ページは (user_id, concept, category) で取得
-        existing = await get_wiki_page(user_id, concept, category)
-        
-        timeline = []
-        if existing and existing.get("timeline"):
-            timeline = existing.get("timeline")
-            if isinstance(timeline, str):
-                import json
-                timeline = json.loads(timeline)
-        new_entry = wiki_data.get("new_timeline_entry")
-        if new_entry:
-            new_entry["_metadata"] = {
-                "original_concept": original_concept,
-                "drawing_id": drawing_id
-            }
-            timeline.insert(0, new_entry)
-        
-        def merge_list(field_name, new_field_name):
-            old_list = (existing.get(field_name) or []) if existing else []
-            new_list = wiki_data.get(new_field_name) or []
-            combined = list(old_list)
-            for item in new_list:
-                if item not in combined:
-                    combined.append(item)
-            return combined
-        
-        exploration = merge_list("schema_exploration", "new_exploration")
-        narrative = merge_list("schema_narrative", "new_narrative")
-        relationship = merge_list("schema_relationship", "new_relationship")
-        inquiry = merge_list("schema_inquiry", "new_inquiry")
-        
-        if existing:
-            existing_ids = existing.get("source_drawing_ids") or []
-            if drawing_id not in existing_ids:
-                existing_ids.append(drawing_id)
-        else:
-            existing_ids = [drawing_id]
-        
-        data = {
-            "user_id": user_id,
-            "concept": concept,
-            "category": category,
-            "summary": wiki_data.get("summary"),
-            "schema_exploration": exploration,
-            "schema_narrative": narrative,
-            "schema_relationship": relationship,
-            "schema_inquiry": inquiry,
-            "timeline": timeline,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "source_drawing_ids": existing_ids
-        }
-        
-        if existing:
-            supabase.table("wiki_pages").update(data).eq("user_id", user_id).eq("concept", concept).eq("category", category).execute()
-        else:
-            supabase.table("wiki_pages").insert(data).execute()
-        
-        print(f"Wiki保存（差分マージ）完了: concept={concept}[{category}]（生タグ: {original_concept}）")
-    except Exception as e:
-        print(f"❌ Wiki保存エラー: {e}")
-
-
-async def get_existing_concepts(user_id: str) -> list:
+# ===== 変更: get_wiki_page（category対応） =====
+async def get_wiki_page(user_id: str, concept: str, category: str) -> dict:
     try:
         result = supabase.table("wiki_pages")\
-            .select("concept")\
+            .select("*")\
             .eq("user_id", user_id)\
+            .eq("concept", concept)\
+            .eq("category", category)\
             .execute()
+        if result.data:
+            return result.data[0]
+        return None
+    except Exception as e:
+        print(f"❌ Wiki取得エラー: {e}")
+        return None
+
+
+# ===== 変更: get_existing_concepts（category絞り込み） =====
+async def get_existing_concepts(user_id: str, category: str = None) -> list:
+    try:
+        query = supabase.table("wiki_pages").select("concept").eq("user_id", user_id)
+        if category:
+            query = query.eq("category", category)
+        result = query.execute()
         return [r["concept"] for r in result.data] if result.data else []
     except Exception as e:
         print(f"❌ 概念一覧取得エラー: {e}")
         return []
 
 
-# タグに対応するwiki_pagesを取得する関数
+# ===== 変更: get_wiki_context（複合キー対応・カテゴリ付きで文脈化） =====
 async def get_wiki_context(user_id: str, tags: list) -> str:
     try:
         if not tags:
             return ""
-        
+
         result = supabase.table("wiki_pages")\
-            .select("concept, summary")\
+            .select("concept, category, summary")\
             .eq("user_id", user_id)\
             .in_("concept", tags)\
             .execute()
-        
+
         if not result.data:
             return ""
-        
+
         context_parts = []
         for page in result.data:
             concept = page.get("concept")
+            category = page.get("category", "")
             summary = page.get("summary")
             if concept and summary:
-                context_parts.append(f"【{concept}】\n{summary}")
-        
+                context_parts.append(f"【{concept}（{category}）】\n{summary}")
+
         return "\n\n".join(context_parts) if context_parts else ""
     except Exception as e:
         print(f"❌ Wiki context取得エラー: {e}")
@@ -309,37 +261,38 @@ async def get_all_wiki_summaries(user_id: str) -> str:
             .select("concept, summary")\
             .eq("user_id", user_id)\
             .execute()
-        
+
         if not result.data:
             return ""
-        
+
         context_parts = []
         for page in result.data:
             concept = page.get("concept")
             summary = page.get("summary")
             if concept and summary:
                 context_parts.append(f"【{concept}】\n{summary}")
-        
+
         return "\n\n".join(context_parts) if context_parts else ""
     except Exception as e:
         print(f"❌ 全Wiki取得エラー: {e}")
         return ""
 
 
-async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str, concept: str, original_concept: str):
+# ===== 変更: save_wiki_page（category保存） =====
+async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str, concept: str, original_concept: str, category: str):
     try:
         if not concept:
             print(f"conceptが空のためスキップ")
             return
-        
-        existing = await get_wiki_page(user_id, concept)
-        
+
+        # 既存ページは (user_id, concept, category) で取得
+        existing = await get_wiki_page(user_id, concept, category)
+
         # タイムラインの結合（過去を保持して新規を追加）
         timeline = []
         if existing and existing.get("timeline"):
             timeline = existing.get("timeline")
             if isinstance(timeline, str):
-                import json
                 timeline = json.loads(timeline)
         new_entry = wiki_data.get("new_timeline_entry")
         if new_entry:
@@ -349,7 +302,7 @@ async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str, concept
                 "drawing_id": drawing_id               # 一次情報へのポインタ
             }
             timeline.insert(0, new_entry)  # 最新を先頭に
-        
+
         # 各スキーマ配列の結合（重複排除・順序維持）
         def merge_list(field_name, new_field_name):
             old_list = (existing.get(field_name) or []) if existing else []
@@ -359,12 +312,12 @@ async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str, concept
                 if item not in combined:
                     combined.append(item)
             return combined
-        
+
         exploration = merge_list("schema_exploration", "new_exploration")
         narrative = merge_list("schema_narrative", "new_narrative")
         relationship = merge_list("schema_relationship", "new_relationship")
         inquiry = merge_list("schema_inquiry", "new_inquiry")
-        
+
         # source_drawing_idsの更新
         if existing:
             existing_ids = existing.get("source_drawing_ids") or []
@@ -372,10 +325,11 @@ async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str, concept
                 existing_ids.append(drawing_id)
         else:
             existing_ids = [drawing_id]
-        
+
         data = {
             "user_id": user_id,
             "concept": concept,
+            "category": category,
             "summary": wiki_data.get("summary"),
             "schema_exploration": exploration,
             "schema_narrative": narrative,
@@ -385,18 +339,20 @@ async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str, concept
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "source_drawing_ids": existing_ids
         }
-        
+
         if existing:
-            supabase.table("wiki_pages").update(data).eq("user_id", user_id).eq("concept", concept).execute()
+            supabase.table("wiki_pages").update(data)\
+                .eq("user_id", user_id).eq("concept", concept).eq("category", category).execute()
         else:
             supabase.table("wiki_pages").insert(data).execute()
-        
-        print(f"Wiki保存（差分マージ）完了: concept={concept}（生タグ: {original_concept}）")
+
+        print(f"Wiki保存（差分マージ）完了: concept={concept}[{category}]（生タグ: {original_concept}）")
     except Exception as e:
         print(f"❌ Wiki保存エラー: {e}")
 
 
-async def enqueue_failed_update(user_id: str, drawing_id: str, original_concept: str, normalized_concept: str, analysis: str, notes: str, needs_normalize: bool = False):
+# ===== 変更: enqueue_failed_update（category対応） =====
+async def enqueue_failed_update(user_id: str, drawing_id: str, original_concept: str, normalized_concept: str, category: str, analysis: str, notes: str, needs_normalize: bool = False):
     """処理に失敗したタグを再処理キューに記録する"""
     try:
         data = {
@@ -404,31 +360,35 @@ async def enqueue_failed_update(user_id: str, drawing_id: str, original_concept:
             "drawing_id": drawing_id,
             "original_concept": original_concept,
             "normalized_concept": normalized_concept,
+            "category": category,
             "analysis": analysis,
             "notes": notes or "",
-            "needs_normalize": needs_normalize,  # ★名寄せが必要かを明示
+            "needs_normalize": needs_normalize,  # 名寄せが必要かを明示
             "status": "pending"
         }
         supabase.table("ingest_queue").insert(data).execute()
         flag = "（要名寄せ）" if needs_normalize else ""
-        print(f"📥 キューに記録{flag}: {normalized_concept}（生タグ: {original_concept}）")
+        print(f"📥 キューに記録{flag}: {normalized_concept}[{category}]（生タグ: {original_concept}）")
     except Exception as e:
         print(f"❌ キュー記録エラー: {e}")
 
 
-async def run_normalize(user_id: str, concept: str, analysis: str, max_retries: int = None):
+# ===== 変更: run_normalize（category受け取り・同カテゴリ照合） =====
+async def run_normalize(user_id: str, concept: str, category: str, analysis: str, max_retries: int = None):
     if max_retries is None:
         max_retries = INGEST_MAX_RETRIES
-    
-    existing_concepts = await get_existing_concepts(user_id)
+
+    # 同じカテゴリの既存概念だけを取得（カテゴリ跨ぎ名寄せを禁止）
+    existing_concepts = await get_existing_concepts(user_id, category)
     existing_concepts_str = ", ".join(existing_concepts) if existing_concepts else ""
-    
+    print(f"名寄せ開始: concept={concept}[{category}], 既存({category}): {existing_concepts_str}")
+
     today = datetime.now(timezone.utc).date().isoformat()
     analysis_with_date = f"[{today}]\n{analysis}"
-    
+
     headers = {"Authorization": f"Bearer {DIFY_API_KEY_NORMALIZE}"}
     run_url = f"{DIFY_API_URL}/workflows/run"
-    
+
     for attempt in range(max_retries + 1):
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
@@ -442,7 +402,7 @@ async def run_normalize(user_id: str, concept: str, analysis: str, max_retries: 
                     "user": "line-user"
                 }
                 response = await client.post(run_url, headers=headers, json=payload)
-                
+
                 if response.status_code == 200:
                     result = response.json()
                     outputs = result.get("data", {}).get("outputs", {})
@@ -456,14 +416,14 @@ async def run_normalize(user_id: str, concept: str, analysis: str, max_retries: 
                             await asyncio.sleep(wait)
                             continue
                         return []
-                
+
                 if response.status_code in (503, 504, 429):
                     print(f"名寄せリトライ(status={response.status_code})。{attempt + 1}回目")
                     if attempt < max_retries:
                         wait = min(2 ** (attempt + 1), INGEST_MAX_WAIT)
                         await asyncio.sleep(wait)
                         continue
-                
+
                 print(f"名寄せエラー: status={response.status_code}")
                 return []
         except Exception as e:
@@ -476,17 +436,18 @@ async def run_normalize(user_id: str, concept: str, analysis: str, max_retries: 
     return []
 
 
-async def run_update(user_id: str, normalized_concept: str, original_concept: str, analysis: str, notes: str, drawing_id: str, max_retries: int = None):
+# ===== 変更: run_update（category対応） =====
+async def run_update(user_id: str, normalized_concept: str, original_concept: str, category: str, analysis: str, notes: str, drawing_id: str, max_retries: int = None):
     if max_retries is None:
         max_retries = INGEST_MAX_RETRIES
-    
+
     has_notes = "true" if notes else "false"
     today = datetime.now(timezone.utc).date().isoformat()
     analysis_with_date = f"[{today}]\n{analysis}"
-    
+
     headers = {"Authorization": f"Bearer {DIFY_API_KEY_UPDATE}"}
     run_url = f"{DIFY_API_URL}/workflows/run"
-    
+
     for attempt in range(max_retries + 1):
         try:
             async with httpx.AsyncClient(timeout=180.0) as client:
@@ -504,11 +465,11 @@ async def run_update(user_id: str, normalized_concept: str, original_concept: st
                     "user": "line-user"
                 }
                 response = await client.post(run_url, headers=headers, json=payload)
-                
+
                 if response.status_code == 200:
                     result = response.json()
                     outputs = result.get("data", {}).get("outputs", {})
-                    
+
                     # 終了ノードの出力を取り出す（キー名の揺れに両対応）
                     bundled_str = ""
                     if "bundled" in outputs:
@@ -518,13 +479,12 @@ async def run_update(user_id: str, normalized_concept: str, original_concept: st
                         bundled_str = val[0] if isinstance(val, list) and val else val
                     if isinstance(bundled_str, list):
                         bundled_str = bundled_str[0] if bundled_str else ""
-                    
+
                     if bundled_str:
-                        import json
                         bundled = json.loads(bundled_str)
                         norm_concept = bundled["concept"]
                         wiki_data = json.loads(bundled["diff"])
-                        await save_wiki_page(user_id, wiki_data, drawing_id, norm_concept, original_concept)
+                        await save_wiki_page(user_id, wiki_data, drawing_id, norm_concept, original_concept, category)
                         return True
                     else:
                         print(f"update出力が空: outputs={outputs}")
@@ -534,14 +494,13 @@ async def run_update(user_id: str, normalized_concept: str, original_concept: st
                             await asyncio.sleep(wait)
                             continue
                         return False
-                
+
                 if response.status_code in (503, 504, 429):
                     print(f"updateリトライ(status={response.status_code})。{attempt + 1}回目")
                     if attempt < max_retries:
                         wait = min(2 ** (attempt + 1), INGEST_MAX_WAIT)
                         await asyncio.sleep(wait)
                         continue
-                
                 print(f"updateエラー: status={response.status_code}")
                 return False
         except Exception as e:
@@ -553,43 +512,46 @@ async def run_update(user_id: str, normalized_concept: str, original_concept: st
             return False
     return False
 
+# ===== 変更: ingest_all_concepts（(タグ,カテゴリ)対応） =====
+async def ingest_all_concepts(user_id: str, tagged_tags: list, analysis: str, notes: str, record_id: str):
+    # tagged_tags = [(タグ名, カテゴリ), ...]
 
-async def ingest_all_concepts(user_id: str, tags: list, analysis: str, notes: str, record_id: str):
-    # 1. 各生タグを名寄せ
-    concept_pairs = []
-    for original_concept in tags:
-        normalized_list = await run_normalize(user_id, original_concept, analysis)
+    # 1. 各タグを、同カテゴリ内で名寄せ
+    concept_triples = []  # (original, normalized, category)
+    for original_concept, category in tagged_tags:
+        normalized_list = await run_normalize(user_id, original_concept, category, analysis)
         if normalized_list:
             for norm in normalized_list:
-                concept_pairs.append((original_concept, norm))
+                concept_triples.append((original_concept, norm, category))
         else:
-            print(f"⚠️ 名寄せ失敗: {original_concept}")
+            print(f"⚠️ 名寄せ失敗: {original_concept}[{category}]")
             # 名寄せ失敗 → needs_normalize=True でキューに積む
-            await enqueue_failed_update(user_id, record_id, original_concept, original_concept, analysis, notes, needs_normalize=True)
+            await enqueue_failed_update(user_id, record_id, original_concept, original_concept, category, analysis, notes, needs_normalize=True)
         await asyncio.sleep(1)
 
     # 2. 概念ページ更新
     failed = []
-    for original_concept, normalized_concept in concept_pairs:
-        success = await run_update(user_id, normalized_concept, original_concept, analysis, notes, record_id)
+    for original_concept, normalized_concept, category in concept_triples:
+        success = await run_update(user_id, normalized_concept, original_concept, category, analysis, notes, record_id)
         if not success:
-            print(f"⚠️ update失敗: {normalized_concept}（生タグ: {original_concept}）")
-            failed.append((original_concept, normalized_concept))
+            print(f"⚠️ update失敗: {normalized_concept}[{category}]（生タグ: {original_concept}）")
+            failed.append((original_concept, normalized_concept, category))
         await asyncio.sleep(2)
 
     # 3. 更新失敗分を30秒後に再挑戦
     if failed:
         print(f"🔁 update再挑戦: {len(failed)}件")
         await asyncio.sleep(30)
-        for original_concept, normalized_concept in failed:
-            success = await run_update(user_id, normalized_concept, original_concept, analysis, notes, record_id)
+        for original_concept, normalized_concept, category in failed:
+            success = await run_update(user_id, normalized_concept, original_concept, category, analysis, notes, record_id)
             if not success:
-                print(f"❌ 再挑戦も失敗 → キューに記録: {normalized_concept}")
+                print(f"❌ 再挑戦も失敗 → キューに記録: {normalized_concept}[{category}]")
                 # 更新失敗 → 名寄せは済んでいるので needs_normalize=False
-                await enqueue_failed_update(user_id, record_id, original_concept, normalized_concept, analysis, notes, needs_normalize=False)
+                await enqueue_failed_update(user_id, record_id, original_concept, normalized_concept, category, analysis, notes, needs_normalize=False)
             await asyncio.sleep(3)
 
 
+# ===== 変更: process_ingest_queue（category対応） =====
 async def process_ingest_queue(user_id: str = None, limit: int = 20):
     """pendingのキューを再処理する"""
     try:
@@ -608,6 +570,7 @@ async def process_ingest_queue(user_id: str = None, limit: int = 20):
             uid = row["user_id"]
             original_concept = row["original_concept"]
             normalized_concept = row["normalized_concept"]
+            category = row.get("category")
             analysis = row["analysis"]
             notes = row["notes"]
             drawing_id = row["drawing_id"]
@@ -615,9 +578,9 @@ async def process_ingest_queue(user_id: str = None, limit: int = 20):
             # このループ内で名寄せをやり直して成功したか
             normalize_succeeded = False
 
-            # 名寄せが必要なキューは、まず名寄せからやり直す
+            # 名寄せが必要なキューは、まず同カテゴリ内で名寄せをやり直す
             if row.get("needs_normalize"):
-                normalized_list = await run_normalize(uid, original_concept, analysis)
+                normalized_list = await run_normalize(uid, original_concept, category, analysis)
                 if not normalized_list:
                     new_count = (row.get("retry_count") or 0) + 1
                     new_status = "failed" if new_count >= 5 else "pending"
@@ -626,21 +589,21 @@ async def process_ingest_queue(user_id: str = None, limit: int = 20):
                         "status": new_status,
                         "updated_at": datetime.now(timezone.utc).isoformat()
                     }).eq("id", queue_id).execute()
-                    print(f"⚠️ 再名寄せ失敗（{new_count}回目）: {original_concept}")
+                    print(f"⚠️ 再名寄せ失敗（{new_count}回目）: {original_concept}[{category}]")
                     await asyncio.sleep(2)
                     continue
                 normalized_concept = normalized_list[0]
                 normalize_succeeded = True
 
             # 概念ページ更新
-            success = await run_update(uid, normalized_concept, original_concept, analysis, notes, drawing_id)
+            success = await run_update(uid, normalized_concept, original_concept, category, analysis, notes, drawing_id)
             if success:
                 supabase.table("ingest_queue").update({
                     "status": "done",
                     "updated_at": datetime.now(timezone.utc).isoformat()
                 }).eq("id", queue_id).execute()
                 processed += 1
-                print(f"✅ キュー処理成功: {normalized_concept}")
+                print(f"✅ キュー処理成功: {normalized_concept}[{category}]")
             else:
                 new_count = (row.get("retry_count") or 0) + 1
                 new_status = "failed" if new_count >= 5 else "pending"
@@ -656,7 +619,7 @@ async def process_ingest_queue(user_id: str = None, limit: int = 20):
                     update_data["needs_normalize"] = False
 
                 supabase.table("ingest_queue").update(update_data).eq("id", queue_id).execute()
-                print(f"⚠️ キュー処理失敗（{new_count}回目、status={new_status}）: {normalized_concept}")
+                print(f"⚠️ キュー処理失敗（{new_count}回目、status={new_status}）: {normalized_concept}[{category}]")
             await asyncio.sleep(2)
 
         print(f"キュー処理完了: {processed}/{len(result.data)} 件成功")
@@ -666,27 +629,33 @@ async def process_ingest_queue(user_id: str = None, limit: int = 20):
         return 0
 
 
+# ===== 変更: extract_tags（(タグ名, カテゴリ) のペアで抽出） =====
 def extract_tags(analysis_text: str) -> list:
     """モードB出力から (タグ名, カテゴリ) のペアを抽出する"""
     import re
-    
+
     category_labels = {
         "モチーフ": "モチーフ",
         "素材": "素材",
         "行為感覚": "行為感覚",
         "コンテキスト": "コンテキスト",
     }
-    
+
     tagged = []
-    for label, category in category_labels.items():
-        pattern = rf"[・･]\s*{label}\s*[:：]\s*(.+)"
-        match = re.search(pattern, analysis_text)
-        if match:
-            tag = match.group(1).strip()
-            tag = tag.strip("[]［］「」 ").strip()
-            if tag and tag != "なし":
-                tagged.append((tag, category))
-    
+    try:
+        for label, category in category_labels.items():
+            # 「・モチーフ：タグ名」の形式から、タグ名を抽出
+            pattern = rf"[・･]\s*{label}\s*[:：]\s*(.+)"
+            match = re.search(pattern, analysis_text)
+            if match:
+                tag = match.group(1).strip()
+                # 角括弧などが残っていたら除去（保険）
+                tag = tag.strip("[]［］「」 ").strip()
+                if tag and tag != "なし" and len(tag) <= 15:
+                    tagged.append((tag, category))
+    except Exception as e:
+        print(f"❌ タグ抽出エラー: {e}")
+
     return tagged
 
 
@@ -699,11 +668,12 @@ async def handle_detail_command(user_id: str, image_data: bytes, notes: str = No
             await push_message(user_id, analysis_for_ingest)
             return
 
-        # ② タグ抽出
-        tags = extract_tags(analysis_for_ingest)
+        # ② タグ抽出（(タグ名, カテゴリ) のペアのリスト）
+        tagged_tags = extract_tags(analysis_for_ingest)
 
-        # ③ wiki_context取得（生タグで・軽い・名寄せなし）
-        wiki_context = await get_wiki_context(user_id, tags)
+        # ③ wiki_context取得（タグ名だけ取り出して渡す・軽い・名寄せなし）
+        tag_names = [t[0] for t in tagged_tags]
+        wiki_context = await get_wiki_context(user_id, tag_names)
 
         # ④ モードB(2回目・wiki_contextあり) ← 親に見せる出力
         if wiki_context:
@@ -711,15 +681,15 @@ async def handle_detail_command(user_id: str, image_data: bytes, notes: str = No
         else:
             analysis_for_parent = analysis_for_ingest
 
-        # ⑤ drawings保存（Ingestはしない・record_idを得る）
-        record_id = await save_analysis_only(user_id, analysis_for_ingest, tags, notes)
+        # ⑤ drawings保存（tagsはタグ名だけ・案A / Ingestはしない・record_idを得る）
+        record_id = await save_analysis_only(user_id, analysis_for_ingest, tag_names, notes)
 
         # ⑥ 先にユーザーへpush（Wiki更新を待たせない）
         await push_message(user_id, analysis_for_parent)
 
-        # ⑦ ユーザー応答の後で、Wiki更新（重い・503でも粘る）
-        if tags and record_id:
-            await ingest_all_concepts(user_id, tags, analysis_for_ingest, notes or "", record_id)
+        # ⑦ ユーザー応答の後で、Wiki更新（tagged_tagsを渡す・重い・503でも粘る）
+        if tagged_tags and record_id:
+            await ingest_all_concepts(user_id, tagged_tags, analysis_for_ingest, notes or "", record_id)
 
     except Exception as e:
         print(f"❌ handle_detail_commandエラー: {e}")
@@ -782,15 +752,11 @@ async def update_notes(user_id: str, notes: str):
 
 @app.get("/")
 @app.head("/")
-
-
 async def health_check():
     return {"status": "ok"}
 
 
 @app.post("/callback")
-
-
 async def callback(request: Request, background_tasks: BackgroundTasks):
     try:
         body = await request.json()
@@ -802,7 +768,7 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
                 user_id = event["source"]["userId"]
                 if message["type"] == "text":
                     user_message = message["text"].strip()
-                            
+
                     if user_message.startswith("ちなみに"):
                         if user_id in last_image_store:
                             notes = user_message.replace("ちなみに", "").strip()
@@ -812,7 +778,7 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
                             background_tasks.add_task(handle_detail_command, user_id, image_data, notes)
                         else:
                             await reply_message(reply_token, "先に絵の写真を送ってください📷")
-                            
+
                     elif user_message == "詳しく":
                         if user_id in last_image_store:
                             await reply_message(reply_token, "🎨 絵を見ています…少しだけお待ちください")
@@ -820,7 +786,7 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
                             background_tasks.add_task(handle_detail_command, user_id, image_data, None)
                         else:
                             await reply_message(reply_token, "先に絵の写真を送ってください📷")
-                    
+
                     elif user_message == "振り返って":
                         await reply_message(reply_token, "🎨 これまでの絵を振り返っています…少しだけお待ちください")
                         try:
@@ -849,13 +815,15 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
                         except Exception as e:
                             print(f"❌ 振り返りエラー: {e}")
                             await push_message(user_id, "⚠️ 振り返りに失敗しました。もう一度お試しください。")
+
                     elif user_message == "キュー処理":
                         await reply_message(reply_token, "🔄 未処理のWiki更新を再開します…")
                         processed = await process_ingest_queue(user_id)
                         await push_message(user_id, f"✅ {processed}件のWiki更新を処理しました")
+
                     else:
                         await reply_message(reply_token, "絵の写真を送ってください📷")
-                        
+
                 elif message["type"] == "image":
                     image_id = message["id"]
                     await reply_message(reply_token, "🎨 絵を見ています…少しだけお待ちください")
@@ -874,9 +842,7 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
                             await push_message(user_id, "💡「詳しく」→ より詳細な分析\n💡「ちなみに〇〇」→ 付帯情報を加えた詳細分析\n💡「振り返って」→ これまでの絵を振り返る")
                     else:
                         await push_message(user_id, "⚠️ 画像の取得に失敗しました。もう一度お試しください。")
-                        
+
     except Exception as e:
         print(f"❌ Webhookエラー: {e}")
     return {"status": "ok"}
-
-
