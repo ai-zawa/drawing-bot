@@ -614,37 +614,27 @@ async def process_ingest_queue(user_id: str = None, limit: int = 20):
 
 
 def extract_tags(analysis_text: str) -> list:
-    tags = []
-    try:
-        import re
-        pattern = r'★コア概念タグ★\n(.*?)(?=\n\n|\n---|\n①|\Z)'
-        match = re.search(pattern, analysis_text, re.DOTALL)
+    """モードB出力から (タグ名, カテゴリ) のペアを抽出する"""
+    import re
+    
+    category_labels = {
+        "モチーフ": "モチーフ",
+        "素材": "素材",
+        "行為感覚": "行為感覚",
+        "コンテキスト": "コンテキスト",
+    }
+    
+    tagged = []
+    for label, category in category_labels.items():
+        pattern = rf"[・･]\s*{label}\s*[:：]\s*(.+)"
+        match = re.search(pattern, analysis_text)
         if match:
-            items_text = match.group(1)
-            for line in items_text.strip().split('\n'):
-                line = line.strip()
-                if '：' in line or ':' in line:
-                    tag_part = line.split('：')[-1].split(':')[-1].strip()
-                    tag_part = tag_part.lstrip('・').strip()
-                    sub_tags = re.split(r'[\s、,]+', tag_part)
-                    for tag in sub_tags:
-                        tag = tag.strip()
-                        if tag and len(tag) <= 15:
-                            tags.append(tag)
-        if not tags:
-            pattern_old = r'★この絵に描かれているもの★\n(.*?)(?=\n\n|\n①|\Z)'
-            match_old = re.search(pattern_old, analysis_text, re.DOTALL)
-            if match_old:
-                items_text = match_old.group(1)
-                for line in items_text.strip().split('\n'):
-                    line = line.strip()
-                    if line.startswith('・'):
-                        tag = line[1:].split('（')[0].split('(')[0].strip()
-                        if tag:
-                            tags.append(tag)
-    except Exception as e:
-        print(f"❌ タグ抽出エラー: {e}")
-    return tags
+            tag = match.group(1).strip()
+            tag = tag.strip("[]［］「」 ").strip()
+            if tag and tag != "なし":
+                tagged.append((tag, category))
+    
+    return tagged
 
 
 # 「詳しく」「ちなみに」の重い処理をまとめてバックグラウンドで実行する関数
