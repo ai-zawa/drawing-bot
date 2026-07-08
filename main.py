@@ -194,19 +194,72 @@ async def save_review(user_id: str, review_text: str, drawing_ids: list):
         print(f"❌ 振り返り保存エラー: {e}")
 
 
-async def get_wiki_page(user_id: str, concept: str) -> dict:
+async def save_wiki_page(user_id: str, wiki_data: dict, drawing_id: str, concept: str, original_concept: str, category: str):
     try:
-        result = supabase.table("wiki_pages")\
-            .select("*")\
-            .eq("user_id", user_id)\
-            .eq("concept", concept)\
-            .execute()
-        if result.data:
-            return result.data[0]
-        return None
+        if not concept:
+            print(f"conceptが空のためスキップ")
+            return
+        
+        # 既存ページは (user_id, concept, category) で取得
+        existing = await get_wiki_page(user_id, concept, category)
+        
+        timeline = []
+        if existing and existing.get("timeline"):
+            timeline = existing.get("timeline")
+            if isinstance(timeline, str):
+                import json
+                timeline = json.loads(timeline)
+        new_entry = wiki_data.get("new_timeline_entry")
+        if new_entry:
+            new_entry["_metadata"] = {
+                "original_concept": original_concept,
+                "drawing_id": drawing_id
+            }
+            timeline.insert(0, new_entry)
+        
+        def merge_list(field_name, new_field_name):
+            old_list = (existing.get(field_name) or []) if existing else []
+            new_list = wiki_data.get(new_field_name) or []
+            combined = list(old_list)
+            for item in new_list:
+                if item not in combined:
+                    combined.append(item)
+            return combined
+        
+        exploration = merge_list("schema_exploration", "new_exploration")
+        narrative = merge_list("schema_narrative", "new_narrative")
+        relationship = merge_list("schema_relationship", "new_relationship")
+        inquiry = merge_list("schema_inquiry", "new_inquiry")
+        
+        if existing:
+            existing_ids = existing.get("source_drawing_ids") or []
+            if drawing_id not in existing_ids:
+                existing_ids.append(drawing_id)
+        else:
+            existing_ids = [drawing_id]
+        
+        data = {
+            "user_id": user_id,
+            "concept": concept,
+            "category": category,
+            "summary": wiki_data.get("summary"),
+            "schema_exploration": exploration,
+            "schema_narrative": narrative,
+            "schema_relationship": relationship,
+            "schema_inquiry": inquiry,
+            "timeline": timeline,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "source_drawing_ids": existing_ids
+        }
+        
+        if existing:
+            supabase.table("wiki_pages").update(data).eq("user_id", user_id).eq("concept", concept).eq("category", category).execute()
+        else:
+            supabase.table("wiki_pages").insert(data).execute()
+        
+        print(f"Wiki保存（差分マージ）完了: concept={concept}[{category}]（生タグ: {original_concept}）")
     except Exception as e:
-        print(f"❌ Wiki取得エラー: {e}")
-        return None
+        print(f"❌ Wiki保存エラー: {e}")
 
 
 async def get_existing_concepts(user_id: str) -> list:
