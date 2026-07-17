@@ -6,6 +6,9 @@ import json
 import asyncio
 from datetime import datetime, timezone
 from supabase import create_client
+import hmac
+import hashlib
+import base64
 
 app = FastAPI()
 
