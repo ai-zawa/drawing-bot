@@ -31,6 +31,21 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 last_image_store = {}
 
 
+
+def verify_line_signature(body: bytes, signature: str) -> bool:
+    """LINEからの正規リクエストであることを署名で検証する"""
+    if not signature or not LINE_CHANNEL_SECRET:
+        return False
+    digest = hmac.new(
+        LINE_CHANNEL_SECRET.encode("utf-8"),
+        body,
+        hashlib.sha256
+    ).digest()
+    expected = base64.b64encode(digest).decode("utf-8")
+    return hmac.compare_digest(expected, signature)
+
+
+
 async def reply_message(reply_token: str, text: str):
     url = "https://api.line.me/v2/bot/message/reply"
     headers = {
