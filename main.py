@@ -776,17 +776,17 @@ async def update_notes(user_id: str, notes: str):
         print(f"❌ メモ更新エラー: {e}")
         return False
 
-
 @app.get("/")
 @app.head("/")
-
-
 async def health_check():
+    # Supabaseの自動pause防止（無料プランは1週間無アクセスで停止するため）
+    try:
+        supabase.table("wiki_pages").select("id").limit(1).execute()
+    except Exception as e:
+        print(f"⚠️ health check DB error: {e}")
     return {"status": "ok"}
 
-
 @app.post("/callback")
-
 
 async def callback(request: Request, background_tasks: BackgroundTasks):
     # A-1: 署名検証（LINE以外からのリクエストを遮断）
