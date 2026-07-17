@@ -779,20 +779,38 @@ async def update_notes(user_id: str, notes: str):
 
 @app.get("/")
 @app.head("/")
+
+
 async def health_check():
     return {"status": "ok"}
 
 
 @app.post("/callback")
+
+
 async def callback(request: Request, background_tasks: BackgroundTasks):
+    # A-1: 署名検証（LINE以外からのリクエストを遮断）
+    body_bytes = await request.body()
+    signature = request.headers.get("X-Line-Signature", "")
+    if not verify_line_signature(body_bytes, signature):
+        print("⚠️ 署名検証に失敗（LINE以外からのリクエストの可能性）")
+        return {"status": "invalid signature"}
+
     try:
-        body = await request.json()
+        body = json.loads(body_bytes)
         events = body.get("events", [])
         for event in events:
             if event.get("type") == "message":
                 reply_token = event["replyToken"]
                 message = event["message"]
                 user_id = event["source"]["userId"]
+
+                # A-2: 招待制（未登録ユーザーは丁重にお断り）
+                if not is_allowed_user(user_id):
+                    print(f"⚠️ 未招待ユーザーからのアクセス: {user_id}")
+                    await reply_message(reply_token, "Amuletは現在、招待制で運用しています🙏")
+                    continue
+
                 if message["type"] == "text":
                     user_message = message["text"].strip()
 
