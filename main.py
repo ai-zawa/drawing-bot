@@ -22,7 +22,6 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 DIFY_API_KEY_REVIEW = os.environ.get("DIFY_API_KEY_REVIEW")
 DIFY_API_KEY_NORMALIZE = os.environ.get("DIFY_API_KEY_NORMALIZE")
 DIFY_API_KEY_UPDATE = os.environ.get("DIFY_API_KEY_UPDATE")
-
 INGEST_MAX_RETRIES = int(os.environ.get("INGEST_MAX_RETRIES", "0"))
 INGEST_MAX_WAIT = int(os.environ.get("INGEST_MAX_WAIT", "30"))
 
@@ -30,6 +29,16 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 last_image_store = {}
 
+ALLOWED_USER_IDS = set(
+    uid.strip()
+    for uid in os.environ.get("ALLOWED_USER_IDS", "").split(",")
+    if uid.strip()
+)
+
+
+def is_allowed_user(user_id: str) -> bool:
+    """招待済みユーザーかを判定する（リスト未設定なら全員拒否）"""
+    return user_id in ALLOWED_USER_IDS
 
 
 def verify_line_signature(body: bytes, signature: str) -> bool:
