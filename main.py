@@ -794,14 +794,12 @@ async def save_analysis_only(user_id: str, record_id: str, analysis_b: str, tags
         return None
 
 
-async def update_notes(user_id: str, notes: str):
+async def update_notes(record_id: str, notes: str):
     try:
-        result = supabase.table("drawings").select("id").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
-        if result.data:
-            record_id = result.data[0]["id"]
-            supabase.table("drawings").update({"notes": notes}).eq("id", record_id).execute()
-            return True
-        return False
+        if not record_id:
+            return False
+        supabase.table("drawings").update({"notes": notes}).eq("id", record_id).execute()
+        return True
     except Exception as e:
         print(f"❌ メモ更新エラー: {e}")
         return False
