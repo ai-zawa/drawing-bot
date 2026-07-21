@@ -729,7 +729,7 @@ async def handle_detail_command(user_id: str, image_data: bytes, notes: str = No
 async def save_image(user_id: str, image_data: bytes) -> str:
     try:
         file_name = f"{user_id}/{uuid.uuid4()}.jpg"
-        supabase.storage.from_("drawings").upload(file_name, image_data, {"content-type": "image/jpeg"})
+        supabase_admin.storage.from_("drawings").upload(file_name, image_data, {"content-type": "image/jpeg"})
         return file_name
     except Exception as e:
         print(f"❌ 画像保存エラー: {e}")
