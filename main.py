@@ -857,10 +857,14 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
                             await reply_message(reply_token, "先に絵の写真を送ってください📷")
 
                     elif user_message == "詳しく":
-                        if user_id in last_image_store:
+                        entry = last_image_store.get(user_id)
+                        if not entry:
+                            entry = await restore_last_image(user_id)
+                            if entry:
+                                last_image_store[user_id] = entry
+                        if entry:
                             await reply_message(reply_token, "🎨 絵を見ています…少しだけお待ちください")
-                            image_data = last_image_store[user_id]
-                            background_tasks.add_task(handle_detail_command, user_id, image_data, None)
+                            background_tasks.add_task(handle_detail_command, user_id, entry["image_data"], None, entry["record_id"])
                         else:
                             await reply_message(reply_token, "先に絵の写真を送ってください📷")
 
