@@ -843,12 +843,16 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
                     user_message = message["text"].strip()
 
                     if user_message.startswith("ちなみに"):
-                        if user_id in last_image_store:
+                        entry = last_image_store.get(user_id)
+                        if not entry:
+                            entry = await restore_last_image(user_id)
+                            if entry:
+                                last_image_store[user_id] = entry
+                        if entry:
                             notes = user_message.replace("ちなみに", "").strip()
-                            await update_notes(user_id, notes)
+                            await update_notes(entry["record_id"], notes)
                             await reply_message(reply_token, "🎨 絵を見ています…少しだけお待ちください")
-                            image_data = last_image_store[user_id]
-                            background_tasks.add_task(handle_detail_command, user_id, image_data, notes)
+                            background_tasks.add_task(handle_detail_command, user_id, entry["image_data"], notes, entry["record_id"])
                         else:
                             await reply_message(reply_token, "先に絵の写真を送ってください📷")
 
