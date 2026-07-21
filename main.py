@@ -690,7 +690,7 @@ def extract_tags(analysis_text: str) -> list:
 
 
 # 「詳しく」「ちなみに」の重い処理をまとめてバックグラウンドで実行する関数
-async def handle_detail_command(user_id: str, image_data: bytes, notes: str = None):
+    async def handle_detail_command(user_id: str, image_data: bytes, notes: str = None, record_id: str = None):
     try:
         # ① モードB(1回目・wiki_contextなし) ← Ingest用の一次情報
         analysis_for_ingest = await analyze_with_dify(image_data, mode="detail", notes=notes)
