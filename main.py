@@ -26,9 +26,9 @@ INGEST_MAX_RETRIES = int(os.environ.get("INGEST_MAX_RETRIES", "0"))
 INGEST_MAX_WAIT = int(os.environ.get("INGEST_MAX_WAIT", "30"))
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # Storage読み書き用の管理者クライアント
 supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY) if SUPABASE_SERVICE_KEY else supabase
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 last_image_store = {}
 
