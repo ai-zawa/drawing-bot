@@ -712,7 +712,7 @@ def extract_tags(analysis_text: str) -> list:
             analysis_for_parent = analysis_for_ingest
 
         # ⑤ drawings保存（tagsはタグ名だけ・案A / Ingestはしない・record_idを得る）
-        record_id = await save_analysis_only(user_id, analysis_for_ingest, tag_names, notes)
+        record_id = await save_analysis_only(user_id, record_id, analysis_for_ingest, tag_names, notes)
 
         # ⑥ 先にユーザーへpush（Wiki更新を待たせない）
         await push_message(user_id, analysis_for_parent)
