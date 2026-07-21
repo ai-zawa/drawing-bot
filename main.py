@@ -772,15 +772,14 @@ async def restore_last_image(user_id: str):
         return None
 
 
-async def save_analysis_only(user_id: str, analysis_b: str, tags: list, notes: str = None) -> str:
-    """drawingsにanalysisとtagsを保存し、record_idを返す（Ingestはしない）"""
+async def save_analysis_only(user_id: str, record_id: str, analysis_b: str, tags: list, notes: str = None) -> str:
+    """指定されたdrawingsレコードにanalysisとtagsを保存する（Ingestはしない）"""
     try:
-        result = supabase.table("drawings").select("id").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
-        if not result.data:
+        if not record_id:
             return None
-        record_id = result.data[0]["id"]
 
         update_data = {}
+        
         if notes:
             update_data["analysis_mode_b_with_notes"] = analysis_b
         else:
