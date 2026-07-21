@@ -736,12 +736,16 @@ async def save_image(user_id: str, image_data: bytes) -> str:
         return None
 
 
-async def save_drawing(user_id: str, image_path: str = None, analysis_a: str = None, analysis_b: str = None, notes: str = None):
+async def save_drawing(user_id: str, image_path: str = None, analysis_a: str = None, analysis_b: str = None, notes: str = None) -> str:
     try:
         data = {"user_id": user_id, "image_path": image_path, "analysis_mode_a": analysis_a, "analysis_mode_b": analysis_b, "notes": notes}
-        supabase.table("drawings").insert(data).execute()
+        result = supabase.table("drawings").insert(data).execute()
+        if result.data:
+            return result.data[0]["id"]
+        return None
     except Exception as e:
         print(f"❌ Drawing保存エラー: {e}")
+        return None
 
 
 async def save_analysis_only(user_id: str, analysis_b: str, tags: list, notes: str = None) -> str:
