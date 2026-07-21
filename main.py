@@ -748,6 +748,30 @@ async def save_drawing(user_id: str, image_path: str = None, analysis_a: str = N
         return None
 
 
+async def restore_last_image(user_id: str):
+    """メモリに画像がないとき、直近のdrawingsレコードとStorageから復元する"""
+    try:
+        result = supabase.table("drawings")\
+            .select("id, image_path")\
+            .eq("user_id", user_id)\
+            .order("created_at", desc=True)\
+            .limit(1)\
+            .execute()
+        if not result.data:
+            return None
+        record = result.data[0]
+        image_path = record.get("image_path")
+        if not image_path:
+            return None
+        image_data = supabase_admin.storage.from_("drawings").download(image_path)
+        if image_data:
+            return {"image_data": image_data, "record_id": record["id"]}
+        return None
+    except Exception as e:
+        print(f"❌ 画像復元エラー: {e}")
+        return None
+
+
 async def save_analysis_only(user_id: str, analysis_b: str, tags: list, notes: str = None) -> str:
     """drawingsにanalysisとtagsを保存し、record_idを返す（Ingestはしない）"""
     try:
