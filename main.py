@@ -916,9 +916,9 @@ async def callback(request: Request, background_tasks: BackgroundTasks):
                         if analysis_result.startswith("⚠️"):
                             await push_message(user_id, analysis_result)
                         else:
-                            last_image_store[user_id] = image_data
                             image_path = await save_image(user_id, image_data)
-                            await save_drawing(user_id, image_path=image_path, analysis_a=analysis_result)
+                            record_id = await save_drawing(user_id, image_path=image_path, analysis_a=analysis_result)
+                            last_image_store[user_id] = {"image_data": image_data, "record_id": record_id}
                             await push_message(user_id, analysis_result)
                             await push_message(user_id, "💡「詳しく」→ より詳細な分析\n💡「ちなみに〇〇」→ 付帯情報を加えた詳細分析\n💡「振り返って」→ これまでの絵を振り返る")
                     else:
